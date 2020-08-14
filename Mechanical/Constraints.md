@@ -50,7 +50,18 @@ It seems like the systems I have for vertical resolution are poorly suited to th
 
 ### Translation Resolution
 
-- [ ] Sleep Checkpoint
+The 100x objective has a field number of 1.25, meaning the FOV is 0.0125mm. That's less than my fine adjustment with existing hardware, so I'll investigate the rest of the lenses.
+
+| Magnification | Field Number | FOV |
+|---|---|---|
+| 100x | 1.25 | 0.0125mm |
+| 40x | 0.65 | 0.01625mm |
+| 10x | 0.25 | 0.025mm |
+| 4x | 0.15 | 0.0375mm |
+
+That doesn't make any sense. It's possible the field numbers are incorrect or misunderstood, but it's not possible to get 25x relative magnification and 1/3 the FOV. I own some optical encoder tape, so I'll use that to find my own values for FOV directly.
+
+- [ ] Correct FOV Checkpoint
 
 
 ## Image Capture
