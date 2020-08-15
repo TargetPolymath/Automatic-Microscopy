@@ -41,7 +41,7 @@ Similarly, our vertical movement resolution is also our vertical observation res
 
 One available candidate for vertical movement is a CD/DVD laser head assembly. One example has a 8-step stepper motor driving a threaded rod - one step maps to 0.2mm. Not a good candidate for sub-cellular imaging. Another has a DC motor and gear system - 0.27mm/turn, which is a pretty poor showing as well.
 
-Additionally, the lenses I have for the microscope are 4x, 10x, 40x, and 100x, with working distances of approximately 30, 6.1, 0.65, and 0.18mm. With a 0.2mm vertical resolution, I could take 3 planes at 40x and 30 planes at 10x, giving a steep trade-off between magnification and vertical steps.
+Additionally, the lenses I have for the microscope are 4x, 10x, 40x, and 100x, with working distances of approximately 16, 6.1, 0.65, and 0.18mm. With a 0.2mm vertical resolution, I could take 3 planes at 40x and 30 planes at 10x, giving a steep trade-off between magnification and vertical steps.
 
 It seems like the systems I have for vertical resolution are poorly suited to the precision needed in this task. However, I'll start where I am and build a horizontal translation stage for the moment, and design plans for a very-fine-grained vertical control system later.
 
