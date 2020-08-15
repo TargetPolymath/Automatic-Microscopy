@@ -50,7 +50,7 @@ This largely depends on the actual subjects being examined. In truth, the custom
 
 ### Translation Resolution
 
-The 100x objective has a field number of 1.25, meaning the FOV is 0.0125mm. That's less than my fine adjustment with existing hardware, so I'll investigate the rest of the lenses.
+The 100x objective is stamped with a field number of 1.25, meaning the FOV is 0.0125mm. That's less than my fine adjustment with existing hardware, so I'll investigate the rest of the lenses and given field numbers.
 
 | Magnification | Field Number | FOV |
 |---|---|---|
