@@ -3,4 +3,4 @@ This is an ongoing record of items which have been purchased, or which are under
 
 | Item | Purpose | Cost | Theory Tested? | Approval? | Ordered? |
 |---|---|---|---|---|---|  
-| Camera to Microscope Adapter | Image Capture | $16 | Yes - EF Mount, 23mm eyepiece |   |   |  
+| Camera to Microscope Adapter | Image Capture | $16 | Yes - EF Mount, 23mm eyepiece | Requested |   |  
