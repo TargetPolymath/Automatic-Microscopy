@@ -25,10 +25,10 @@ Depth from front of platform to lens: 52.25mm centered
 
 Light Hole: 26.73mm diameter, centered under the lens
 
-Mounting Pin Holes:
-2 x 2.98mm diameter holes, 91.5mm from front of platform, 27.3mm from either edge, 59.18mm between centers
-1 x threaded hole, 109mm from front, centered. Thread OD 3.5mm, 0.61mm thread pitch, ID not measured (calipers' blades not sharp enough). Appears to be standard M3.5x0.6 metric threads.
-2 x 2mm diameter holes, 40.7mm from sides, 29mm from back, 32.5mm between centers
+#### Mounting Pin Holes:  
+- 2 x 2.98mm diameter holes, 91.5mm from front of platform, 27.3mm from either edge, 59.18mm between centers  
+- 1 x threaded hole, 109mm from front, centered. Thread OD 3.5mm, 0.61mm thread pitch, ID not measured (calipers' blades not sharp enough). Appears to be standard M3.5x0.6 metric threads.  
+- 2 x 2mm diameter holes, 40.7mm from sides, 29mm from back, 32.5mm between centers  
 
 
 ## Criteria:
