@@ -50,16 +50,7 @@ This largely depends on the actual subjects being examined. In truth, the custom
 
 ### Translation Resolution
 
-The 100x objective is stamped with a field number of 1.25, meaning the FOV is 0.0125mm. That's less than my fine adjustment with existing hardware, so I'll investigate the rest of the lenses and given field numbers.
-
-| Magnification | Field Number | FOV |
-|---|---|---|
-| 100x | 1.25 | 0.0125mm |
-| 40x | 0.65 | 0.01625mm |
-| 10x | 0.25 | 0.025mm |
-| 4x | 0.15 | 0.0375mm |
-
-That doesn't make any sense. It's possible the field numbers are incorrect or misunderstood, but it's not possible to get 25x relative magnification and 1/3 the FOV. I own some optical encoder tape and some high precision calipers, so I'll use that to find my own values for FOV directly.
+I previously found that the values stamped on the objective lenses are not accurate field numbers (see previous commit). I own some optical encoder tape and some high precision calipers, so I'll use that to find my own values for FOV directly.
 
 The camera itself will be using an effective 1x eyepiece, but I only own as low as a 5x eyepiece, so these are recorded values for a 5x eyepiece and a conversion to the expected camera FOV.
 
