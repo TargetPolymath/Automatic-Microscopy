@@ -39,18 +39,18 @@ If it's comfortable to turn the knob 0.5mm, then in order to compete with manual
 Similarly, our vertical movement resolution is also our vertical observation resolution. Animal cells are in the order of 10-30 micron, and plant cells range from 10-100 micron, so a 2-5 micron resolution vertically would be an effective goal.
 
 
-One available candidate for vertical movement is a CD/DVD laser head assembly. One example has a 8-step stepper motor driving a threaded rod - one step maps to 0.2mm. Not a good candidate for sub-cellular imaging. Another has a DC motor and gear system - 0.27mm/turn, which is a pretty poor showing as well.
+One available candidate for vertical movement is a CD/DVD laser head assembly. One example has a 8-step stepper motor driving a threaded rod - one step maps to 0.1235mm. Not a good candidate for sub-cellular imaging. Another has a DC motor and gear system - 0.27mm/turn, which is a pretty poor showing as well.
 
-Additionally, the lenses I have for the microscope are 4x, 10x, 40x, and 100x, with working distances of approximately 16, 6.1, 0.65, and 0.18mm. With a 0.2mm vertical resolution, I could take 3 planes at 40x and 30 planes at 10x, giving a steep trade-off between magnification and vertical steps.
+Additionally, the lenses I have for the microscope are 4x, 10x, 40x, and 100x, with working distances of approximately 16, 6.1, 0.65, and 0.18mm. With a 0.1235mm vertical resolution, I could take ~5 planes at 40x and ~50 planes at 10x, giving a steep but potentially usable trade-off between magnification and vertical steps.
 
-It seems like the systems I have for vertical resolution are poorly suited to the precision needed in this task. However, I'll start where I am and build a horizontal translation stage for the moment, and design plans for a very-fine-grained vertical control system later.
+It seems like the systems I have for vertical resolution are barely - but acceptably - suited for the tasks at hand. However, I'll start where I am and build a horizontal translation stage for the moment, and design plans for a very-fine-grained vertical control system later.
 
 ### Vertical Range
 This largely depends on the actual subjects being examined. In truth, the customer (my curiosity) imagines I'll be depth-stacking images of objects less than 1cm thick, perhaps significantly less, due to the difficulty of imaging objects of that thickness. However, I may be imaging the surfaces of objects significantly more than 1cm tall, perhaps as much as 4 or 5cm; however, this can be set manually on the microscope and left static through the duration of the imaging process.
 
 ### Translation Resolution
 
-I previously found that the values stamped on the objective lenses are not accurate field numbers (see previous commit). I own some optical encoder tape and some high precision calipers, so I'll use that to find my own values for FOV directly. Note these are along the wide view of the camera, fully crossing the width - these would be shrunk some in order to have a fully inscribed rectangle.
+I previously found that the values stamped on the objective lenses are not accurate field numbers. I own some optical encoder tape and some high precision calipers, so I'll use that to find my own values for FOV directly. Note these are along the wide view of the camera, fully crossing the width - these would be shrunk some in order to have a fully inscribed rectangle.
 
 | Magnification | FOV |
 |---|---|
@@ -65,7 +65,7 @@ The approximated travel resolution for the CD drivers - 0.2mm - sits in the ball
 
 Our goal is to take tens to hundreds of FOVs across an entire sample. At a maximum 4.2mm FOV, a 10 FOV image set at 4x would be 42mm of travel. The CD driver only supports up to 40mm of travel, just under the 10 FOV target. Additionally, other drivers around 300mm are available, though at sizes and constructions that made them unfit for consideration as vertical drivers. They will be considered in more detail after simple prototypes are completed.  
 
-At a minimum 0.168mm FOV, 100 FOVs would require 16.8mm of travel; this also isn't possible on the CD drivers, and the larger drivers might likely struggle to manage the 0.16mm travel. Again, this will be investigated more at a later date.
+At a minimum 0.168mm FOV, 100 FOVs would require 16.8mm of travel; this is possible on the CD drivers, though the larger drivers might likely struggle to manage the 0.16mm travel. Again, this will be investigated more at a later date.
 
 ### Third axis?
 
