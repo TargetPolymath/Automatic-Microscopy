@@ -94,7 +94,7 @@ void update_stepper(){
 		digitalWrite(BNP1, BCoil == -1);
 		digitalWrite(BNP2, BCoil == -1);
 		digitalWrite(BNG1, BCoil == -1);
-		delay(50);
+		delay(10);
 
 	}
 
