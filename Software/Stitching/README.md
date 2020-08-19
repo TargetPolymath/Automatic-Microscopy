@@ -1,7 +1,7 @@
 # Goals
 
 - [ ] Low computational power needed
-- [ ] Ease of use (to some extent)
+- [x] Ease of use (to some extent)
 - [ ] Effective at performing stitching operations
 
 # Inputs
@@ -11,11 +11,11 @@
 
 # Plan
 
-- [ ] Display the first and second image (A and B)
-- [ ] Gather user input to get the general transform from A to B
+- [x] Display the first and second image (A and B)
+- [x] Gather user input to get the general transform from A to B
 - [ ] Use some method to 'snap' to close solutions
 - [ ] User confirms a 'snap' is good, or confirms their manual movement is good
-- [ ] Extrapolate transform through image series, asking for confirm/deny
+- [x] Extrapolate transform through image series, asking for confirm/deny
 
 - Deny Options:
 	- [ ] The extrapolation is wrong for a single image
