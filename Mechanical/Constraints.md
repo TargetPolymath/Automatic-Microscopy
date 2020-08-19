@@ -39,50 +39,33 @@ If it's comfortable to turn the knob 0.5mm, then in order to compete with manual
 Similarly, our vertical movement resolution is also our vertical observation resolution. Animal cells are in the order of 10-30 micron, and plant cells range from 10-100 micron, so a 2-5 micron resolution vertically would be an effective goal.
 
 
-One available candidate for vertical movement is a CD/DVD laser head assembly. One example has a 8-step stepper motor driving a threaded rod - one step maps to 0.2mm. Not a good candidate for sub-cellular imaging. Another has a DC motor and gear system - 0.27mm/turn, which is a pretty poor showing as well.
+One available candidate for vertical movement is a CD/DVD laser head assembly. One example has a 8-step stepper motor driving a threaded rod - one step maps to 0.1235mm. Not a good candidate for sub-cellular imaging. Another has a DC motor and gear system - 0.27mm/turn, which is a pretty poor showing as well.
 
-Additionally, the lenses I have for the microscope are 4x, 10x, 40x, and 100x, with working distances of approximately 16, 6.1, 0.65, and 0.18mm. With a 0.2mm vertical resolution, I could take 3 planes at 40x and 30 planes at 10x, giving a steep trade-off between magnification and vertical steps.
+Additionally, the lenses I have for the microscope are 4x, 10x, 40x, and 100x, with working distances of approximately 16, 6.1, 0.65, and 0.18mm. With a 0.1235mm vertical resolution, I could take ~5 planes at 40x and ~50 planes at 10x, giving a steep but potentially usable trade-off between magnification and vertical steps.
 
-It seems like the systems I have for vertical resolution are poorly suited to the precision needed in this task. However, I'll start where I am and build a horizontal translation stage for the moment, and design plans for a very-fine-grained vertical control system later.
+It seems like the systems I have for vertical resolution are barely - but acceptably - suited for the tasks at hand. However, I'll start where I am and build a horizontal translation stage for the moment, and design plans for a very-fine-grained vertical control system later.
 
 ### Vertical Range
 This largely depends on the actual subjects being examined. In truth, the customer (my curiosity) imagines I'll be depth-stacking images of objects less than 1cm thick, perhaps significantly less, due to the difficulty of imaging objects of that thickness. However, I may be imaging the surfaces of objects significantly more than 1cm tall, perhaps as much as 4 or 5cm; however, this can be set manually on the microscope and left static through the duration of the imaging process.
 
 ### Translation Resolution
 
-I previously found that the values stamped on the objective lenses are not accurate field numbers (see previous commit). I own some optical encoder tape and some high precision calipers, so I'll use that to find my own values for FOV directly.
+I previously found that the values stamped on the objective lenses are not accurate field numbers. I own some optical encoder tape and some high precision calipers, so I'll use that to find my own values for FOV directly. Note these are along the wide view of the camera, fully crossing the width - these would be shrunk some in order to have a fully inscribed rectangle.
 
-The camera itself will be using an effective 1x eyepiece, but I only own as low as a 5x eyepiece, so these are recorded values for a 5x eyepiece and a conversion to the expected camera FOV.
+| Magnification | FOV |
+|---|---|
+| 100x | 0.168mm |
+| 40x | 0.42mm |
+| 10x | 1.68mm |
+| 4x | 4.2mm |
 
-| Magnification | FOV 5x | FOV Expected |
-|---|---|---|
-| 100x | 0.19(2)mm | 0.96mm |
-| 40x | 0.5mm | 2.5mm |
-| 10x | 1.92mm | 9.6mm |
-| 4x | 5mm | 25mm |
-
-These are *much* more in line with the behaviors I would expect. 
-
-The camera has a rectangular field which may be inscribed in the FOV, circumscribing the FOV, or something else. However, these FOV values give me order of magnitude estimates for lateral positioning resolution.
-
-Given a series of coliniar circular FOV images with some distance between their centers kD (k times the diameter), we can imagine a stripe running along the whole line where every point on that stripe is inside some FOV, or more than one. If we want that stripe to take up some fraction V of the total 'height' of the circles (the diameter, perpendicular to the coliniar centers), we find that k = sqrt(1 - V^2); so, if we wanted to use 80% of the height (just a reasonable example, not a special figure), we would move 0.6 diameters (or FOVs) between images. This tells us we would need a lateral movement resolution as low as around 0.6mm ($(100x FOV) * 0.6 FOVs ~= 0.6mm). This is definitely managable with the CD drivers.
-
-I'll expand these calculations out for each magnification:
-
-
-| Magnification | FOV Expected | Travel mm per field @ 80% |
-|---|---|---|
-| 100x | 0.96mm | 0.576mm |
-| 40x | 2.5mm | 1.5mm |
-| 10x | 9.6mm | 5.76mm |
-| 4x | 25mm | 15mm |
-
+The approximated travel resolution for the CD drivers - 0.2mm - sits in the ballpark of the 100x magnification FOV, especially given how rough those estimates are.
 
 ### Translation Range
 
-Our goal is to take tens to hundreds of FOVs across an entire sample. At a maximum 25mm FOV, a 10 FOV image set at 4x would be 250mm of travel. The CD driver only supports up to 40mm of travel, just under 2 FOV; however, other drivers around 300mm are available, though at sizes and constructions that made them unfit for consideration as vertical drivers. They will be considered in more detail after simple prototypes are completed.  
+Our goal is to take tens to hundreds of FOVs across an entire sample. At a maximum 4.2mm FOV, a 10 FOV image set at 4x would be 42mm of travel. The CD driver only supports up to 40mm of travel, just under the 10 FOV target. Additionally, other drivers around 300mm are available, though at sizes and constructions that made them unfit for consideration as vertical drivers. They will be considered in more detail after simple prototypes are completed.  
 
-At a minimum 0.96mm FOV, 100 FOVs would require 96mm of travel; this also isn't possible on the CD drivers, and the larger drivers might likely struggle to manage the 0.6mm travel. Again, this will be investigated more at a later date.
+At a minimum 0.168mm FOV, 100 FOVs would require 16.8mm of travel; this is possible on the CD drivers, though the larger drivers might likely struggle to manage the 0.16mm travel. Again, this will be investigated more at a later date.
 
 ### Third axis?
 
@@ -107,15 +90,16 @@ The vision ought to be improved with some more specific target speeds. However, 
 One experiment demonstrating the flow of dye through the stem and flower of a Carnation; the lower average length of a carnation stem is ~500mm (the experiment lists shorter as better), and the experiment suggests the dye reaches the flower after around 24 hours. This pace is incredibly slow, a little under 6 micron per second, but it does suggest that (with a horizontal travel maxing out around 300mm) that these capture sessions could last 15 hours or more.
 
 A preliminary test I can perform at home is the rate of capillary spread of water over tissue paper - around 1.5 mm/second. The motor drivers should be able to handle this easily. 
-As for the camera, at the highest magnification and 80% height coverage (meaning an image every 0.6mm), this requires an image be taken every 0.4 seconds. A quick test finds that the camera, through the most common configuration of the most common interface, takes a little over 3 seconds between images. That's fairly poor performance for our needs, as it limits our highest-magnification travel speed to 0.2mm/s. I'll complete this calculation for each magnification.
+As for the camera, at the highest magnification (meaning an image every 0.168mm), this requires an image be taken every 0.112 seconds. A quick test finds that the camera, through the most common configuration of the most common interface, takes a little over 3 seconds between images. That's fairly poor performance for our needs, as it limits our highest-magnification travel speed to 0.056mm/s. I'll complete this calculation for each magnification.
 
-| Magnification | FOV Expected | Travel mm per field @ 80% | 3s / img max travel speed @ 80% |
-|---|---|---|---|
-| 100x | 0.96mm | 0.576mm | 0.192mm/s |
-| 40x | 2.5mm | 1.5mm | 0.5mm/s |
-| 10x | 9.6mm | 5.76mm | 1.92mm/s |
-| 4x | 25mm | 15mm | 5mm/s |
+| Magnification | FOV | 3s/img travel speed |
+|---|---|---|
+| 100x | 0.168mm | 0.056 mm/s |
+| 40x | 0.42mm | 0.14 mm/s |
+| 10x | 1.68mm | 0.56 mm/s |
+| 4x | 4.2mm | 1.4 mm/s |
 
-This suggests the tissue paper could be 'filmed' at 10x. However, it should be noted that I also briefly attempted the same capillary experiment with a sponge and discarded it because it was much slower than I expected, so a material designed to absorb water quickly, given a continuous source of water to draw from, may be an unusually rapid benchmark.
 
-This also suggests that I should find or make available a camera with significantly higher continuous capture speeds. I'll also note that a brief Google search suggests the camera I'm putting to use can be used for *normal* continuous use for around 2 hours, so a picture every 3 seconds (or more often) may limit the run time of experiments significantly. It's seeming more and more likely that, eventually, a totally new image capture solution will be needed.
+This suggests the tissue paper could barely be 'filmed' at 4x. However, it should be noted that I also briefly attempted the same capillary experiment with a sponge and discarded it because it was much slower than I expected, so a material designed to absorb water quickly, given a continuous source of water to draw from, may be an unusually rapid benchmark.
+
+This also suggests that I should find or make available a camera with significantly higher continuous capture speeds. I'll also note that a brief Google search suggests the battery of the camera I'm putting to use can be used for *normal* continuous use for around 2 hours, so a picture every 3 seconds (or more often) may limit the run time of experiments significantly. It's seeming more and more likely that, eventually, a totally new image capture solution will be needed.
