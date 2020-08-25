@@ -1,6 +1,7 @@
 # Dependencies Management
 
 def install_and_import(package, pip_name = None):
+	print("DepMan importing ", package)
 	if pip_name is None:
 		print("Smart pip name")
 		pip_name = package
