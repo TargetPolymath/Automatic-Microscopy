@@ -8,12 +8,12 @@ DepMan.install_and_import("PIL", pip_name = "Pillow")
 
 from PIL import Image, ImageOps, ImageTk
 
-DOWNSIZE_RATIO = 0.5
+DOWNSIZE_RATIO = 0.2
 
 
 class GUI_Window(object):
 	"""A single instance of an editing window"""
-	def __init__(self, width = 1500, height = 1500, start_offset_ratio = [0, 0], downsize_ratio = DOWNSIZE_RATIO):
+	def __init__(self, width = 3000*DOWNSIZE_RATIO, height = 3000*DOWNSIZE_RATIO, start_offset_ratio = [0, 0], downsize_ratio = DOWNSIZE_RATIO):
 		super(GUI_Window, self).__init__()
 		self.width = width
 		self.height = height
