@@ -30,7 +30,7 @@ class GUI_Window(object):
 
 		self.start_offset_ratio = start_offset_ratio;
 		self.offset_vector = [0, 0];
-		print("Starting Offset Vector: ", self.offset_vector)
+		# print("Starting Offset Vector: ", self.offset_vector)
 		self.rotation = 0;
 
 		self.mouse_clickdown_pos = [0, 0]
@@ -46,6 +46,9 @@ class GUI_Window(object):
 		self.root.bind('<Down>', self.down_arrow)
 		self.root.bind('<Left>', self.left_arrow)
 		self.root.bind('<Right>', self.right_arrow)
+		self.root.bind('<Tab>', self.skip_GUI)
+
+		self.initiate_skip_GUI = False
 
 		# self.root.mainloop()
 
@@ -56,14 +59,18 @@ class GUI_Window(object):
 	def shutdown(self, event):
 		self.root.destroy()
 
+	def skip_GUI(self, event):
+		self.initiate_skip_GUI = True
+		self.shutdown(event)
+
 	def load_AB_img(self, A_filepath, B_filepath):
-		print("Loading Images...")
+		# print("Loading Images...")
 		self.img_array[0] = load_and_resize(A_filepath, self.downsize_ratio); # [Tkinter image, PIL image]
 		self.img_array[1] = load_and_resize(B_filepath, self.downsize_ratio, alpha = 150);
 
 		self.offset_vector[0] = self.start_offset_ratio[0]*self.img_array[1][1].width
 		self.offset_vector[1] = self.start_offset_ratio[1]*self.img_array[1][1].height
-		print("New Offset Vector: ", self.offset_vector)
+		# print("New Offset Vector: ", self.offset_vector)
 
 		self.A_img = self.canvas.create_image(0, 0, image=self.img_array[0][0], anchor = "nw");
 		self.B_img = self.canvas.create_image(self.offset_vector[0], self.offset_vector[1], image=self.img_array[1][0], anchor = "nw");
@@ -113,10 +120,10 @@ class GUI_Window(object):
 
 
 	def collect_transform(self):
-		print("Collecting Transform...")
+		# print("Collecting Transform...")
 		output = [self.offset_vector[0] / self.img_array[1][0].width(), self.offset_vector[1] / self.img_array[1][0].height()]
-		print(output)
-		return output
+		# print(output)
+		return output, self.initiate_skip_GUI
 
 
 		

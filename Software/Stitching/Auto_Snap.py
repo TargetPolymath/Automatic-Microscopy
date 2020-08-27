@@ -1,24 +1,25 @@
 # Image Auto_snapping
 import DepMan
-print("Managing Auto_Snap dependencies...");
+# print("Managing Auto_Snap dependencies...");
 DepMan.install_and_import("PIL", pip_name = "Pillow")
 DepMan.install_and_import("numpy")
 DepMan.install_and_import("math")
 DepMan.install_and_import("random")
+DepMan.install_and_import("multiprocessing")
 from PIL import Image, ImageMath
 import numpy as np
 import math
 import random
+import multiprocessing
 
-min_scale = 8 # only go down to 2^8 pixels
-max_scale = 10 # only go up to 2^10 pixels
+min_scale = 4 # only go down to 2^5 pixels
+max_scale = 10 # only go up to 2^12 pixels
 
 class Alignment(object):
 	"""docstring for Alignment"""
 	def __init__(self, img1, img2, fractional_transform, name = None):
 		super(Alignment, self).__init__()
-		self.img1 = img1
-		self.img2 = img2
+		self.images = [img1, img2]
 		if name is None:
 			self.name = "".join(random.choice("abcdef") for i in range(5))
 		else:
@@ -34,234 +35,254 @@ class Alignment(object):
 
 		scale_steps = math.floor(math.log2(max_res))
 
-		self.scale = max(0, scale_steps - min_scale) 
+		self.scale = max(0, scale_steps - min_scale)
+		self.wider_net = False
 		self.ending_downscale   = max(0, scale_steps - max_scale) 
 		self.prior_transforms = [];
+		self.img_scale_cache = [{}, {}];
 
 
-	def perform_optimization_step(self, alpha_mask):
-		if self.scale == self.ending_downscale:
-			print("\n"*5)
-			print("DONE!")
-			return False, np.zeros_like(self.img1)
-		print("\n")
-		print("	Single Optimizer Step on "+self.name)
-		print("	Starting with f_transform ", self.fractional_transform)
+	def _retrieve_img(self, image_id, scale = None):
+		""" Image_id is on a range of 0 or 1; retrieve new or prior scaled version of image """
 
-		alpha_img = Image.fromarray(np.multiply(alpha_mask, 255).astype(np.uint8).transpose()).convert('L')
-		img1_alpha = self.img1.copy()
-		img1_alpha.putalpha(alpha_img.resize(self.img1.size))
-		img2_alpha = self.img2.copy()
-		img2_alpha.putalpha(alpha_img.resize(self.img2.size))
+		if scale is None:
+			scale = self.scale
+		# print("[cache] grabbing image at scale ", scale)
+		cache = self.img_scale_cache[image_id]
+		# Not a memory duplicate, just a reference
 
-		# print(img1_alpha)
+		if scale in cache.keys():
+			# print("[cache] Using cached image scale...")
+			return cache[scale].copy()
+		else:
+			# print("[cache] generating fresh...")
+			ratio = 1/(2**scale)
+			target_im = self.images[image_id]
 
-		ratio = 1/(2**self.scale)
-		print("		R=%6f"%ratio)
+			img_new_width = round(target_im.width * ratio)
+			img_new_height = round(target_im.height * ratio)
+
+			img = target_im.resize((img_new_width, img_new_height))
+			img = img.convert("RGBA") # Just making sure
+			img = np.array(img).swapaxes(0, 1) # Pre-convert to array, and convert to WxHXC
+			cache[scale] = img
+			# print("[cache] Fresh complete")
+			return img
+
+	def optimize(self):
+		counter = 0;
+		while self.perform_optimization_step():
+			print(f"\n[ITER] {counter} for {self.name}")
+			counter += 1
+
+		return self.fractional_transform, self.collect_error_print()
+
+
+
+	def perform_optimization_step(self):
+		if self.scale < self.ending_downscale:
+			# print("\n"*5)
+			# print("DONE!")
+			return False
+		# print("\n")
+		# print(f"	Single Optimizer Step on {self.name} with scale {self.scale}")
 
 
 		errors = np.zeros((3, 3))
 
+		window_size = 2
+		if self.wider_net:
+			window_size = 3
+
+		# print("		Window Size: ", window_size)
+
 		for dx in [-1, 0, 1]: # post-scale pixel travel
 			for dy in [-1, 0, 1]: # post-scale pixel travel
 				# print("			dx=%d,dy=%d"%(dx, dy))
-				errors[dx+1, dy+1], _ = error(img1_alpha, img2_alpha, self.fractional_transform, ratio, px_transform = [dx, dy])
+				errors[dx+1, dy+1], _ = self.error(px_transform = [dx*window_size, dy*window_size])
 		# print("		Errors:\n", errors)
 
 		step = np.subtract(np.unravel_index(np.argmin(errors, axis=None), errors.shape), 1)
 
 		if np.all(step==0):
-			self.scale -= 1
-			self.prior_transforms = [];
+			if self.wider_net: # Before moving to the next scale, double our window size
+				self.scale -= 1
+				self.prior_transforms = [];
+				self.wider_net = False
+			else:
+				self.wider_net = True
 		else:
-			scale_update = np.divide(np.divide(step, np.multiply(ratio, np.asarray(self.img2.size))), 2)
+			scale_update = np.divide(np.divide(step, np.multiply(1/(2**self.scale), np.asarray(self.images[1].size))), window_size/2)
 			new_fractional_transform = [self.fractional_transform[0] + scale_update[0], self.fractional_transform[1] + scale_update[1]]
-			
+			self.wider_net = False;
 			if new_fractional_transform not in self.prior_transforms:
 				self.prior_transforms.append(new_fractional_transform)
-				print("		Update Direction: ", step)
-				print("		Scale Update: ", scale_update)
+				# print("		Update Direction: ", step)
+				# print("		Scale Update: ", scale_update)
 				self.fractional_transform = [x for x in new_fractional_transform]
-				print("		New Transform: ", self.fractional_transform)
-				print("		Org Transform: ", self.original_transform)
+				print(f"[{self.name}]		New Transform: [%2.3f, %2.3f]"%(self.fractional_transform[0], self.fractional_transform[1]))
+				print(f"[{self.name}]		Org Transform: [%2.3f, %2.3f]"%(self.original_transform[0], self.original_transform[1]))
 			else:
+				# print("		[Skip] Already evaluated transform")
 				self.scale -= 1 # No update, we've already been where we're going; scale down and continue
 				self.prior_transforms = [];
 
-		# Contribute to Alpha Mask
-		error_print = collect_error_print(self.img1, self.img2, self.fractional_transform, ratio)
 
-		return True, error_print
+		return True
+
+
+	def error(self, scale = None, px_transform = [0, 0]):
+		# This will be the evaluator for the error between two images and their relative transform (transform as a fraction of img2 size)
+		# Technically, both images are color arrays or color-alpha arrays (no alpha is presumed to be full opacity)
+		# We take the product of the alpha channels as a scale of the R^2 error contribution
+
+		# Direct transform is a pixel transformation added on top of the ratio transformation
+
+		# Right now it's a terrible placeholder
+
+		#####################################
+		# print("			Starting Error...")
+		if scale is None:
+			scale = self.scale
+
+		# Step 1: Retrieve Images
+		array1 = self._retrieve_img(0, scale = scale)
+		array2 = self._retrieve_img(1, scale = scale)
+		# print("			array1 shape: ", array1.shape)
+
+
+		# Step 2: Calculate the scale-transform in pixels
+
+		transform_s = [int(round(self.fractional_transform[0]*array2.shape[0] + px_transform[0])), int(round(self.fractional_transform[1]*array2.shape[1] + px_transform[1]))]
+		# print("			Transform_S: ", transform_s)
+
+
+		# Get arrays of the overlapping region
+
+
+		##########################################
+		# PIL arrays are height, width, pixel-data
+		##########################################
+
+		# print("			Img1 Array Shape: ", array1.shape)
+		# print("			Img2 Array Shape: ", array2.shape)
+
+		overlap_width  = int(round(max(0, min(array1.shape[0], array2.shape[0] + transform_s[0]) - max(0, transform_s[0]))))
+		overlap_height = int(round(max(0, min(array1.shape[1], array2.shape[1] + transform_s[1]) - max(0, transform_s[1]))))
+		# print("			Overlap Height: ", overlap_height)
+		# print("			Overlap Width:  ", overlap_width)
+
+		array1 = array1[max(0,    transform_s[0]):max(0,    transform_s[0])+overlap_width, max(0,    transform_s[1]):max(0,    transform_s[1]) + overlap_height]
+		array2 = array2[max(0, -1*transform_s[0]):max(0, -1*transform_s[0])+overlap_width, max(0, -1*transform_s[1]):max(0, -1*transform_s[1]) + overlap_height]
+
+		# print("			Array 1 shape: ", array1.shape)
+		# print("			Array 2 shape: ", array2.shape)
+
+
+		# img1_s_o and img2_s_o have pixel values aligned according to the transform. It's time to start evaluating
+		ratio = 1/(2**scale)
+		score, straight_e = self._error(array1, array2, "R=1/2^%5f,dx=%d,dy=%d"%(scale, self.fractional_transform[0]+px_transform[0]/ratio, self.fractional_transform[1]+px_transform[1]/ratio))
+		
+		# print("			Ending Error")
+		return score, straight_e
+
+	def _error(self, ar1, ar2, title="Image"):
+		""" ar1 and ar2 are WxHxC """
+		# print("				Starting _Error...")
+
+		rgb_r2 = np.square(np.subtract(ar1[:, :, :-1], ar2[:, :, :-1]))
+		rgb_straight_e = np.mean(rgb_r2, -1)
+
+		# print("			Straight_E Shape: ", rgb_straight_e.shape)
+		# print("				square_diff min: ", np.min(rgb_r2))
+
+		# We include alpha in our calculations here because a user could choose to modify the alpha channel of an image before feeding it in, and we should respect that
+		alpha_product = np.divide(np.multiply(ar1[:, :, -1], ar2[:, :, -1]), 255**2)
+		scaled_e = np.multiply(rgb_straight_e, alpha_product)
+		# scaled_e = rgb_straight_e.copy()
+
+
+		scaled_e = np.average(scaled_e)
+		# print("			Got score ", scaled_e);
+
+		# print("				Ending _Error")
+		return scaled_e, rgb_straight_e
+
+
+	def collect_error_print(self):
+		# We have two images which approximately overlap.
+		# However, some parts of the images contain artifacts.
+		# The position of the artifacts is consistant in the frame of a single image.
+		# 
+		# Where are the artifacts?
+
+		error_score, straight_e = self.error(0) # Evaluate error with a scale of (1/(2^0)) (full res)
+		# Note - straight_e only has area according to the /overlap/ between images, not the /full image size/.
+
+
+
+		# straight_e = straight_e.transpose() # PIL changes between WxH and HxW
+
+		# se_shape = list(straight_e.shape)
+		# target_se_shape = [int(round(x / scale)) for x in se_shape]
+		# print("		se_shape: ", straight_e.shape)
+		# print("		tse_shape: ", target_se_shape)
+
+		# print("		se min: ", np.min(straight_e))
+		# print("		se max: ", np.max(straight_e))
+
+
+		# e_img = Image.fromarray(straight_e.transpose()).resize(target_se_shape)
+		# e_img = Image.fromarray(straight_e).resize(target_se_shape)
+		
+		err_dest = np.ones(self.images[1].size)*255 #WxH
+		# print("		err_dest full: ", err_dest.shape)
+		# print("		err_dest tl subslice: ", err_dest[  :straight_e.shape[0],   :straight_e.shape[1]].shape)
+		# print("		err_dest br subslice: ", err_dest[-straight_e.shape[0]:, -straight_e.shape[1]:].shape)
+
+
+		err_dest[  :straight_e.shape[0],   :straight_e.shape[1] ] = np.minimum(err_dest[:straight_e.shape[0],  :straight_e.shape[1] ], straight_e)
+		err_dest[  -straight_e.shape[0]:,  -straight_e.shape[1]:] = np.minimum(err_dest[-straight_e.shape[0]:, -straight_e.shape[1]:], straight_e)
+
+
+
+		# tl = Image.new('L', img1.size, (255))
+		# tl.paste(e_img, (0, 0))
+		# # tl.show()
+		# br = Image.new('L', img1.size, (255))
+		# br.paste(e_img, (img1.size[0]-target_se_shape[0], img1.size[1]-target_se_shape[1]))
+		# # br.show()
+		# err_dest = ImageMath.eval("min(tl, br)", tl=tl, br=br)
+
+		# err_dest.show()
+		# exit()
+
+		return err_dest
+
+
+
+
+
 	def close(self):
-		self.img1.close()
-		self.img2.close()
+		for img in self.images:
+			img.close()
 
 
+def optimize_worker(argstack):
+	fn1, fn2, tf = argstack
+	op_t, error_print = run_optimize(fn1, fn2, tf)
+	# send_end.send((op_t, error_print))
+	return op_t, error_print
 
 
-def optimize_transform(img1, img2, input_transform):
-	# Placeholder
-	# Just evaluate error and get on with it
+def run_optimize(fname1, fname2, tf):
+	print("Creating Alignment for: ", fname1, fname2)
 
-	# We're presuming the aspect is in the order of magnitude of less than 2:1
-	print("	Starting Optimizer...")
-	print("	Optimizer starting with transform ", input_transform)
-	max_res = img2.width
-	# input_transform = np.asarray(input_transform)
+	ali = Alignment(Image.open(fname1), Image.open(fname2), tf, fname2)
+	print("[run_optimize] optimize...")
+	op_transform, error_print = ali.optimize()
+	print("[run_optimize] done")
 
-	# If we decide that the smallest image we'll expect to get useful info from is 128*128, how many times can we
-	# 	divide the width by two and stay above a width of 128?
+	ali.close()
 
-	scale_steps = math.floor(math.log2(max_res))
-
-	starting_downscale = max(0, scale_steps - min_scale) # how many powers of two between 2^7 and image width? divide by 2 to that power
-	ending_downscale   = max(0, scale_steps - max_scale) # how many powers of two between 2^10 and image width? 
-
-	print("	Looping %d times:"%(starting_downscale - ending_downscale))
-
-	for scale in range(starting_downscale, ending_downscale, -1):
-		for step_count in range(10): # Arbitrary to prevent looping
-			ratio = 1/(2**scale)
-			print("		R=%6f"%ratio)
-
-			errors = np.zeros((3, 3))
-
-			for dx in [-1, 0, 1]: # post-scale pixel travel
-				for dy in [-1, 0, 1]: # post-scale pixel travel
-					# print("			dx=%d,dy=%d"%(dx, dy))
-					errors[dx+1, dy+1], _ = error(img1, img2, input_transform, ratio, px_transform = [dx, dy])
-
-			print("		Errors:\n", errors)
-
-			step = np.subtract(np.unravel_index(np.argmin(errors, axis=None), errors.shape), 1)
-
-			if np.all(step==0):
-				break;
-			else:
-				print("		Update Direction: ", step)
-				scale_update = np.divide(np.divide(step, np.multiply(ratio, np.asarray(img2.size))), 2)
-				print("		Scale Update: ", scale_update)
-				input_transform[0] += scale_update[0]
-				input_transform[1] += scale_update[1]
-				print("		New Transform: ", input_transform)
-
-
-	return input_transform
-
-def error(img1, img2, transform, scalar, px_transform = [0, 0]):
-	# This will be the evaluator for the error between two images and their relative transform (transform as a fraction of img2 size)
-	# Technically, both images are color arrays or color-alpha arrays (no alpha is presumed to be full opacity)
-	# We take the product of the alpha channels as a scalar of the R^2 error contribution
-
-	# Direct transform is a pixel transformation added on top of the ratio transformation
-
-	# Right now it's a terrible placeholder
-
-	#####################################
-
-	# Step 0: Ensure there's some kind of alpha component
-	img1 = img1.convert("RGBA")
-	img2 = img2.convert("RGBA")
-
-	# Step 1: Scale according to the scalar to reduce computation time
-	img1_new_width = round(img1.width * scalar)
-	img1_new_height = round(img1.height * scalar)
-
-	img2_new_width = round(img2.width * scalar)
-	img2_new_height = round(img2.height * scalar)
-
-
-	img1_s = img1.resize((img1_new_width, img1_new_height))
-	img2_s = img2.resize((img2_new_width, img2_new_height))
-
-	# Step 2: Calculate the scalar-transform in pixels
-
-	transform_s = [int(round(transform[0]*img2_new_width) + px_transform[0]), int(round(transform[1]*img2_new_height) + px_transform[1])]
-	# print("			Transform_S: ", transform_s)
-	# Get arrays of the overlapping region
-	# PIL arrays are height, width, pixel-data
-	array1 = np.array(img1_s)
-	array2 = np.array(img2_s)
-	# print("			Img1 Array Shape: ", array1.shape)
-	# print("			Img2 Array Shape: ", array2.shape)
-
-	overlap_width =  int(round(max(0, min(img1_new_width,  img2_new_width  + transform_s[0]) - max(0, transform_s[0]))))
-	overlap_height = int(round(max(0, min(img1_new_height, img2_new_height + transform_s[1]) - max(0, transform_s[1]))))
-	# print("			Overlap Height: ", overlap_height)
-	# print("			Overlap Width:  ", overlap_width)
-	# array1_o = array1[round(max(0, transform_s[1])):round(max(0, transform_s[1]))+overlap_height, round(max(0, transform_s[0])):round(min(-1, transform_s[0]))]
-	# array2_o = array2[round(max(0, -1*transform_s[1])):round(min(-1, -1*transform_s[1])), round(max(0, -1*transform_s[0])):round(min(-1, -1*transform_s[0]))]
-
-	array1_o = array1[max(0,    transform_s[1]):max(0,    transform_s[1]) + overlap_height, max(0,    transform_s[0]):max(0,    transform_s[0])+overlap_width]
-	array2_o = array2[max(0, -1*transform_s[1]):max(0, -1*transform_s[1]) + overlap_height, max(0, -1*transform_s[0]):max(0, -1*transform_s[0])+overlap_width]
-
-	# print("			Array 1 shape: ", array1_o.shape)
-	# print("			Array 2 shape: ", array2_o.shape)
-
-
-	# img1_s_o and img2_s_o have pixel values aligned according to the transform. It's time to start evaluating
-
-	score, straight_e = _error(array1_o, array2_o, "R=%5f,dx=%d,dy=%d"%(scalar, transform[0]+px_transform[0]/scalar, transform[1]+px_transform[1]/scalar))
-
-	return score, straight_e
-
-def _error(ar1, ar2, title="Image"):
-
-	rgb_r2 = np.square(ar1[:, :, :-1] - ar2[:, :, :-1])
-	# print("				square_diff min: ", np.min(rgb_r2))
-
-	# Image.fromarray(rgb_r2)# .show(title=title)
-
-	rgb_straight_e = np.mean(rgb_r2, -1)
-	# print("			Straight_E Shape: ", rgb_straight_e.shape)
-
-	alpha_product = (ar1[:, :, -1]*ar2[:, :, -1])/(255**2)
-
-	rgb_scaled_e = rgb_straight_e * alpha_product
-	# print("			Scaled_E Shape: ", rgb_scaled_e.shape)
-
-	r2 = np.average(rgb_scaled_e)
-
-	# print("			Got score ", r2);
-	return r2, rgb_straight_e
-
-
-
-def collect_error_print(img1, img2, transform, scalar):
-	# We have two images which approximately overlap
-	# However, some parts of the images contain artifacts
-	# The position of the artifacts is consistant in the frame of a single image
-	# Where are the artifacts?
-
-	error_score, straight_e = error(img1, img2, transform, scalar)
-	straight_e = straight_e.transpose() # PIL changes between WxH and HxW
-
-	se_shape = list(straight_e.shape)
-	target_se_shape = [int(round(x / scalar)) for x in se_shape]
-	# print("		se_shape: ", se_shape)
-	# print("		tse_shape: ", target_se_shape)
-
-	# print("		se min: ", np.min(straight_e))
-	# print("		se max: ", np.max(straight_e))
-
-	e_img = Image.fromarray(straight_e.transpose()).resize(target_se_shape)
-	
-
-	tl = Image.new('L', img1.size, (255))
-	tl.paste(e_img, (0, 0))
-	# tl.show()
-	br = Image.new('L', img1.size, (255))
-	br.paste(e_img, (img1.size[0]-target_se_shape[0], img1.size[1]-target_se_shape[1]))
-	# br.show()
-	err_dest = ImageMath.eval("min(tl, br)", tl=tl, br=br)
-
-	# err_dest.show()
-	# exit()
-
-	return err_dest
-
-
-
-
-
-
+	return op_transform, error_print

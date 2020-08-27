@@ -4,8 +4,10 @@ import DepMan
 
 DepMan.install_and_import("numpy")
 DepMan.install_and_import("PIL", pip_name = "Pillow")
+DepMan.install_and_import("multiprocessing")
 from PIL import Image
 import numpy as np
+import multiprocessing
 
 import Auto_Snap as snap
 
@@ -15,114 +17,115 @@ class Stack(object):
 		super(Stack, self).__init__()
 		self.filenames = [];
 		self.transforms = []
+		self.alpha_mask = None;
+		self.output_dims = None;
+		self.global_transforms = None;
 
 	def register_root(self, filename):
 		self.filenames.append(filename);
 		self.transforms.append([0, 0]) # placeholder
 
 	def register(self, filename, transform):
-		print("Registering transform ", transform)
+		# print("Registering transform ", transform)
 		self.filenames.append(filename)
 		self.transforms.append(transform)
-		print("Transforms: ", self.transforms)
+		# print("Transforms: ", self.transforms)
 
-	def output(self, target_filename):
+	def align(self):
+		""" From files on the stack, calculate alignments and an alpha mask for dust """
+		# We need a single image to use as a size reference
+		ref_img = Image.open(self.filenames[0])
 
-		print("Starting Output")
 
+
+		# This will get used while calculating an alpha mask for dust
+		error_arrays = np.ones([len(self.filenames)-1, ref_img.width, ref_img.height])
 		
 
-		
+		# We're done with the reference image
+		ref_img.close()
 
-		# YES it's RAM intensive
-		# I didn't buy a 36G RAM server by accident
-		images = [Image.open(fname) for fname in self.filenames]
+		# Very helpful for getting through all the alignments quickly
+		p = multiprocessing.Pool();
 
-		# alignments = [snap.Alignment(images[0], images[0], [0, 0])]
-		alignments = []
+		tasks_list = []
+
 		for x, tf in zip(range(len(self.filenames)-1), self.transforms[1:]):
-			print("Creating Alignment for: ", self.filenames[x], self.filenames[x+1])
-			alignments.append(snap.Alignment(images[x], images[x+1], tf))
-
-		# exit()
+			tasks_list.append([self.filenames[x], self.filenames[x+1], tf])
 
 
-		alpha_mask = np.ones(images[0].size)
-		# print(error_arrays.shape)
-		# print(alpha_mask.shape)
-		# exit()
-		error_arrays = np.ones([len(alignments), images[0].width, images[0].height])
-		# while True: # ending when all the Alignments are returning [0, zeros_like]
-		for iteration in range(20):	
-			
-			done = True;
-			for i, alignment in enumerate(alignments):
-				more, error_mask = alignment.perform_optimization_step(alpha_mask)
-				if more:
-					done = False
-					# somehow update the alpha mask
-					# error_mask.show()
+		response_packets = p.map(snap.optimize_worker, tasks_list)
 
-					emask_array = np.asarray(error_mask).transpose() # Switching back to WxH
-					print("		EMask Mean: ", np.mean(emask_array))
-					print("		EMask Shape: ", emask_array.shape)
-					print("		Error Array: ", error_arrays.shape)
-					error_arrays[i] = emask_array
-			if done:
-				break
-			# Otherwise...
-			########
-			# Calculate new alpha_mask
+		for x, (new_transform, emask_array) in enumerate(response_packets):
 
-			avg_error = np.mean(error_arrays)
-			max_error = np.max(error_arrays)
-			min_error = np.min(error_arrays)
-			print("Min Error: ", min_error)
-			print("Avg Error: ", avg_error)
-			print("Max Error: ", max_error)
-			print("TL  Error: ", error_arrays[:, 0, 0])
-			print("Mid Error: ", error_arrays[:, 2000, 2000])
+			self.transforms[x+1] = new_transform
+			error_arrays[x] = emask_array
 
-			temp_error_arrays = error_arrays.copy()
-			# temp_error_arrays = np.subtract(temp_error_arrays, 10)
-			# temp_error_arrays = np.multiply(temp_error_arrays, -1)
-			# temp_error_arrays = np.divide(temp_error_arrays, 100)
-			# temp_error_arrays = np.add(temp_error_arrays, 1)
-			temp_error_arrays = np.subtract(temp_error_arrays, np.min(temp_error_arrays))
-			temp_error_arrays = np.subtract(temp_error_arrays, 10)
-			temp_error_arrays = np.divide(temp_error_arrays, np.max(temp_error_arrays))
-			temp_error_arrays = np.add(np.multiply(temp_error_arrays, -1), 1)
+		p.close()
 
-			# print("EA Min: ", np.min(temp_error_arrays))
-			# print("EA Max: ", np.max(temp_error_arrays))
-			print("EA Full Shape: ", temp_error_arrays.shape)
-			temp_error_arrays = np.max(temp_error_arrays, 0)
-			temp_error_arrays = np.maximum(temp_error_arrays, 0)
-			temp_error_arrays = np.minimum(temp_error_arrays, 1)
-			print("EA Shape: ", temp_error_arrays.shape)
-			alpha_mask = temp_error_arrays
-			# Image.fromarray(np.multiply(alpha_mask,255).astype(np.uint8).transpose()).show()
+
+		# Calculate an alpha_mask
+
+
+		avg_error = np.mean(error_arrays)
+		max_error = np.max(error_arrays)
+		min_error = np.min(error_arrays)
+		# print("Min Error: ", min_error)
+		# print("Avg Error: ", avg_error)
+		# print("Max Error: ", max_error)
+		# print("TL  Error: ", error_arrays[:, 0, 0])
+		# print("Mid Error: ", error_arrays[:, 2000, 2000])
+
+		# error_arrays = np.subtract(error_arrays, 10)
+		# error_arrays = np.multiply(error_arrays, -1)
+		# error_arrays = np.divide(error_arrays, 100)
+		# error_arrays = np.add(error_arrays, 1)
+		error_arrays = np.subtract(error_arrays, np.min(error_arrays))
+		error_arrays = np.subtract(error_arrays, 20)
+		error_arrays = np.divide(error_arrays, np.max(error_arrays))
+		error_arrays = np.add(np.multiply(error_arrays, -2), 1) # Intentionally max out some of the alpha range
+
+		# print("EA Min: ", np.min(error_arrays))
+		# print("EA Max: ", np.max(error_arrays))
+		print("EA Full Shape: ", error_arrays.shape)
+	
+
+		######################################################################################################################################################
+		# Issue: In high-error areas, some kind of grain comes in when only reporting the 'max' opacity suggested
+		# Test: If we sort the errors and weight them, can we get a smoother result?
+
+		# error_arrays = np.sort(error_arrays) # sort along the Stack, so that for each pixel position, the suggested opacities are sorted low to high
+
+		# I want some list of numbers which sum to one, which start at larger and end at smaller fractions of one, and there are as many numbers as images (N)
+		# Opt. 1: 2/N+1, then [1/N+1] * (N-1)
+
+		# error_arrays = (np.mean(error_arrays, 0) + np.max(error_arrays, 0))/2
+		error_arrays = np.mean(error_arrays, 0)
 
 
 
 
+		error_arrays = np.maximum(error_arrays, 0)
+		error_arrays = np.minimum(error_arrays, 1)
+		print("EA Shape: ", error_arrays.shape)
+		self.alpha_mask = error_arrays
 
 
+	def construct_global_alignments(self):
+
+		self.global_transforms = [[0, 0]]
+		running_bbox = [[0, 0], [0, 0]]
 
 
+		for fname, transform in zip(self.filenames, self.transforms):
+			image = Image.open(fname)
+			# new_width = alignment.images[1].width
+			# new_height = alignment.images[1].height
 
-
-
-		global_transforms = [[0, 0]]
-		running_bbox = [[0, 0], [images[0].width, images[0].height]] # Top Left and Bottom Right corners
-		# images = [Image.open(self.filenames[0]), Image.open(self.filenames[0])]
-
-		# for fname, transform in zip(self.filenames, self.transforms):
-		for alignment in alignments:
-			new_width = alignment.img2.width
-			new_height = alignment.img2.height
-
-			transform = alignment.fractional_transform
+			# transform = alignment.fractional_transform
+			new_width = image.width
+			new_height = image.height
+			image.close()
 
 
 
@@ -130,25 +133,25 @@ class Stack(object):
 			# 	# Convert from transformation ratios (some fraction of the width) into absolute pixel values
 			# 	# NOTE: These are pixel values relative to the previous image
 
-			# 	print("	Given Ratio Transform: ", transform)
+			# print("	Given Ratio Transform: ", transform)
 
 			# 	transform = snap.optimize_transform(images[0], images[1], transform)
-			print("	Optimized Ratio Transform: ", transform)
+			# print("	Optimized Ratio Transform: ", transform)
 
 
 			relative_x = transform[0]*new_width
 			relative_y = transform[1]*new_height
-			print("	Optimized Relative Transform: ", [relative_x, relative_y])
+			# print("	Optimized Relative Transform: ", [relative_x, relative_y])
 			
 
 			# alignment.close() # We could keep alignment alive, but I'd rather free memory
 
 			# 	# Convert from sequential relative transforms to global transform (assuming the first image has a transform (0, 0))
-			global_transform_x = global_transforms[-1][0] + relative_x
-			global_transform_y = global_transforms[-1][1] + relative_y
+			global_transform_x = self.global_transforms[-1][0] + relative_x
+			global_transform_y = self.global_transforms[-1][1] + relative_y
 
 			# 	# Add our new global transforms to our running list of global transforms
-			global_transforms.append([global_transform_x, global_transform_y])
+			self.global_transforms.append([global_transform_x, global_transform_y])
 
 			# 	# For compatability, we assume the 'global' transform applies to the top left corner of the image
 			# 	# So, we need to calculate the extent of our total 'canvas', which requires knowing where the bottom right corner of the image lands
@@ -173,37 +176,55 @@ class Stack(object):
 		final_height = int(round(running_bbox[1][1] + top_overrun))
 		print("Final Width:  ", final_width)
 		print("Final Height: ", final_height)
+		self.output_dims = [(final_width, final_height), (left_overrun, top_overrun)]
 
+	def output(self, target_filename, return_when_done = False):
 		# Creating a blank canvas which is white and has opacity 0
-		dst = Image.new('RGBA', (final_width, final_height), (0, 100, 0, 0));
+
+		if self.alpha_mask is None:
+			self.align()
+		if self.output_dims is None:
+			self.construct_global_alignments()
+
+		dst = Image.new('RGBA', self.output_dims[0], (0, 100, 0, 0));
 
 		print("Pasting")
 
 
 
-		alpha_img = Image.fromarray(np.multiply(alpha_mask, 255).astype(np.uint8).transpose()).convert('L')
+		alpha_img = Image.fromarray(np.multiply(self.alpha_mask, 255).astype(np.uint8).transpose()).convert('L')
 		# alpha_img.show()
 
-		print("Len Images: ", len(images))
-		print("Len GTransforms: ", len(global_transforms))
-		print("Len Alignments: ", len(alignments))
-		for img, g_transform in zip(images, global_transforms):
+		# print("Len Images: ", len(images))
+		# print("Len GTransforms: ", len(global_transforms))
+		# print("Len Alignments: ", len(alignments))
+		# print(self.global_transforms)
+		# print(self.filenames)
+
+		for fname, g_transform in zip(self.filenames, self.global_transforms[1:]):
 			# When we paste the image, use this opacity for blending (255 to fully overwrite)
+			img = Image.open(fname)
 			# img.putalpha(128)
 			img.putalpha(alpha_img.resize(img.size))
 			# img.show()
 
-			# print("	Pasting Image ", fname)
+			print("	Pasting Image ", fname)
 			print("	Transform: ", g_transform)
-
+			# print((int(round(g_transform[0] + left_overrun)), int(round(g_transform[1] + top_overrun))))
 			# For the particular global transform of this image, plus our global offset to guarantee positive coordinates, place the image onto our canvas
 
-			dst.alpha_composite(img, (int(round(g_transform[0] + left_overrun)), int(round(g_transform[1] + top_overrun))))
+			dst.alpha_composite(img, (int(round(g_transform[0] + self.output_dims[1][0])), int(round(g_transform[1] + self.output_dims[1][1]))))
 			img.close()
 		# In some blending cases, the resulting alpha channel is not fully opaque. This line sets the alpha channel to opaque.
 		# If a partially transparent output image is desired, remove this line
 		# dst.putalpha(255)
-		dst = dst.save(target_filename)
+		try:
+			dst.save(target_filename)
+		except PermissionError:
+			print("[Error] Unable to save file to disk with that name. Try another one?")
+
+		if return_when_done:
+			return dst
 
 
 

@@ -10,42 +10,70 @@ import glob
 import sys
 
 # Grab filenames
-	
-img_list = sys.argv[1:]
-print(img_list)
-print(len(sys.argv))
-img_list.sort()
-print("###############")
-print(img_list)
-print("Is this correct?")
-input()
 
-# img_list = ["Test_A.png", "Test_B.png", "Test_C.png", "Test_D.png"]
 
-# Prepare image stacking
+if __name__ == '__main__':
 
-stack = Post.Stack()
 
-stack.register_root(img_list[0])
+	print("-"*30)
+	print("Welcome to Automatic Microscopy!")
+	print("-"*30)
+	print("This module takes in image files with overlapping fields, aligns them, attempts to remove lens artifacts and dirt, and stitches them together.")
+	print("\nThis will scale the load according to your CPU's core count, so this /definitely/ can overload a machine that's already doing significant work. Be cautious.")
+	print("\n"*2)
+	print("="*50)
+	print("- - - - THE ONLY HELP YOU'LL GET - - - -")
+	print("="*50)
+	print("Click and drag on the GUI images until they seem to be somewhat aligned. This software can take care of a lot of misalignment, but it's easier if you give it a little help.")
+	print("[NOTICE] This software WILL NOT FUNCTION if any image does not overlap with both of its neighbors.")
+	print("\nWhen you're satisfied with your alignment, hit [ENTER].")
+	print("If all of your images have roughly the same relative transformation (relative to it's previous), you can click-and-drag that transform once, then hit [TAB] for the rest of the images to auto-complete.")
+	print("The output is currently called 'Out_T.png' because I haven't built a way for you to change it.")
+	print("Hit [Enter], confirm that the filenames were collected correctly, and get aligned!")
+	input()
 
-###########
-# Start a Window
+	img_list = sys.argv[1:]
+	# print(img_list)
+	# print(len(sys.argv))
+	img_list.sort()
+	print("###############")
+	print(img_list)
+	print("Is this correct? ([ENTER]/[CANCEL])")
+	input()
 
-for filename in img_list[1:]:
-	print("\n\n")
-	live_window = GUI.GUI_Window(start_offset_ratio = stack.transforms[-1]);
+	# img_list = ["Test_A.png", "Test_B.png", "Test_C.png", "Test_D.png"]
 
-	live_window.load_AB_img(stack.filenames[-1], filename)
+	# Prepare image stacking
 
-	live_window.kickoff()
+	stack = Post.Stack()
 
-	fractional_offset = live_window.collect_transform()
-	print("Gathered Fractional Offset - ", fractional_offset)
+	stack.register_root(img_list[0])
 
-	stack.register(filename, fractional_offset)
-	print("-------\n")
+	skip_GUI = False
+	fractional_offset = [0, 0]
 
-stack.output("Out_T.png")
+	###########
+	# Start a Window
+
+	for filename in img_list[1:]:
+		print("\n\n")
+
+		if not skip_GUI:
+
+			live_window = GUI.GUI_Window(start_offset_ratio = stack.transforms[-1]);
+
+			live_window.load_AB_img(stack.filenames[-1], filename)
+
+			live_window.kickoff()
+
+			fractional_offset, skip_GUI = live_window.collect_transform()
+			# print("Gathered Fractional Offset - ", fractional_offset)
+
+		stack.register(filename, fractional_offset)
+		# print("-------\n")
+
+
+	stack.output("Out_T.png")
 
 
 
