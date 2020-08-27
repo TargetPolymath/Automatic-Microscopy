@@ -5,3 +5,7 @@ Generally, I want to build a computer-controlled microscope stage and digital im
 
 # Purpose
 I hope to develop post-capture analysis software which could conceivably be run by a high-schooler on hardware they might have access to.
+
+# Status
+1. This toolkit can control a G-Code-style serial-connected controller and camera to take photos with timing and position offsets.
+1. This toolkit can receive a series of images, determine their relative alignments (with or without human help), and stitch them into a single output image.
