@@ -6,7 +6,7 @@
 - [ ] I want to be able to programatically change the focal height of the microscope.  
 
 ## Software
-- [ ] I want analysis software which can stitch images together with imprecise positional data (EG partially relying on visual information).  
+- [x] I want analysis software which can stitch images together with imprecise positional data (EG partially relying on visual information).  
 - [ ] I want analysis software which can use multiple overlapping images to perform sub-pixel sampling for higher effective resolution.  
 - [ ] I want analysis software which can perform 'computed tomography' on images at different focus depths, to build up a 3D structure.  
 - [ ] I want analysis software which can receive information about the FOV of the microscope is, along with the length of the sample, and produce a 'schedule' on its own.  
