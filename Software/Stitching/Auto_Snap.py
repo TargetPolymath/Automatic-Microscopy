@@ -15,18 +15,21 @@ DepMan.install_and_import("numpy")
 DepMan.install_and_import("math")
 DepMan.install_and_import("random")
 DepMan.install_and_import("multiprocessing")
+DepMan.install_and_import("occa")
 from PIL import Image, ImageMath
 import numpy as np
 import math
 import random
 import multiprocessing
 
+import occa
+
 min_scale = 4 # only go down to 2^5 pixels
 max_scale = 10 # only go up to 2^12 pixels
 
 class Alignment(object):
 	"""docstring for Alignment"""
-	def __init__(self, img1, img2, fractional_transform, name = None):
+	def __init__(self, img1, img2, fractional_transform, name = None, pipeline = None, argpack = None):
 		super(Alignment, self).__init__()
 		self.images = [img1, img2]
 		if name is None:
@@ -49,6 +52,15 @@ class Alignment(object):
 		self.ending_downscale   = max(0, scale_steps - max_scale) 
 		self.prior_transforms = [];
 		self.img_scale_cache = [{}, {}];
+
+		if pipeline is None:
+			self.pipeline = 'numpy'
+			self.device = None
+			self._error = self._error_numpy
+		else:
+			self.pipeline = 'OCCA'
+			self.device = occa.Device(argpack)
+			self._error = self._error_occa
 
 
 	def _retrieve_img(self, image_id, scale = None):
@@ -165,7 +177,6 @@ class Alignment(object):
 		transform_s = [int(round(self.fractional_transform[0]*array2.shape[0] + px_transform[0])), int(round(self.fractional_transform[1]*array2.shape[1] + px_transform[1]))]
 		# print("			Transform_S: ", transform_s)
 
-
 		# Get arrays of the overlapping region
 
 
@@ -195,8 +206,8 @@ class Alignment(object):
 		# print("			Ending Error")
 		return score, straight_e
 
-	def _error(self, ar1, ar2, title="Image"):
-		""" ar1 and ar2 are WxHxC """
+	def _error_numpy(self, ar1, ar2, title="Image"):
+		""" Using Numpy, calculate the R^2 error between the two arrays """
 		# print("				Starting _Error...")
 
 		rgb_r2 = np.square(np.subtract(ar1[:, :, :-1], ar2[:, :, :-1]))
@@ -207,6 +218,7 @@ class Alignment(object):
 
 		# We include alpha in our calculations here because a user could choose to modify the alpha channel of an image before feeding it in, and we should respect that
 		alpha_product = np.divide(np.multiply(ar1[:, :, -1], ar2[:, :, -1]), 255**2)
+		
 		scaled_e = np.multiply(rgb_straight_e, alpha_product)
 		# scaled_e = rgb_straight_e.copy()
 
@@ -216,6 +228,77 @@ class Alignment(object):
 
 		# print("				Ending _Error")
 		return scaled_e, rgb_straight_e
+
+	def _error_occa(self, ar1, ar2, title="Image"):
+		""" Using the OCCA pipeline, calculate the R^2 error between the two arrays """
+
+		# For performance, I'll be flattening the arrays
+		o_dimensions = device.malloc(ar1.shape.astype(np.intc)) # we assume we won't get images with 65,535 pixels on a side
+		o_ar1 = device.malloc(ar1.astype(np.float32).ravel())
+		o_ar2 = device.malloc(ar2.astype(np.float32).ravel())
+
+		# NEW MEMORY LAYOUT:
+		# o_ar* is in [width * [height * [px]]]
+
+		##############
+		# Generating R^2 Error
+		# 
+		# For index K, if K%(o_dimensions[3]) != o_dimensions[3]-1: (If we're in an RGB value)
+		#	o_ar1[k] = (o_ar1[k] - o_ar2[k])**2
+
+		##############
+		# Getting Alpha-product
+		# 
+		# for index K, if K%(o_dimensions[3]) == o_dimensions[3]-1: (If we're in an Alpha value)
+		#	o_ar1[K] = (o_ar1[K] * o_ar2[K])/(255**2)
+
+		#############
+		# -- Requires R^2 error to be complete
+		# Taking the R^2 Error Mean per pixel
+		#
+		# for index K, if K%(o_dimension[3]) == 0: (If we're in the Red channel, becoming the straight_e channel)
+		# 	o_ar1[K] = (o_ar1[K] + o_ar1[K+1] + o_ar1[K+2])/3.0
+		#
+		# This value needs to get preserved and returned; so:
+		# 	o_ar1[K+1] = o_ar1[K]
+
+		############
+		# -- Requires R^2 Error mean to be complete
+		# Computing the alpha_weighted R^2 error
+		#
+		# for index K, if K%(o_dimension[3]) == 0: (If we're indexed to the straight_e channel)
+		# 	o_ar1[K+1] = o_ar1[K] * o_ar1[K+3]
+		# The G channel (soon to be averaged) equals the straight_e channel times the product-alpha channel
+
+		#######################################
+		# New Kernel
+
+
+		###########
+		# -- Requires prior kernel to complete
+		# Averaging the alpha_weighted values
+		#
+		# alive = o_dimensions[0] * o_dimensions[1]
+		# local double sub_blocksum[blockdim]
+		#
+		# ????
+		# 
+		# while alive > 1:
+		# 	Synchronize?
+		# 	for index A:
+		# 		if A < alive):
+		# 			o_ar1[A+1] = (o_ar1[A+1] + o_ar1[A+1 + alive)]) / 2.0
+
+		###########
+		# Copy o_ar1 back to CPU
+		# Reshape o_ar1 back into (WxHxC)
+		# R channel is straight e
+		# G channel at pixel[0, 0] is error average
+
+
+
+
+
 
 
 	def collect_error_print(self):
@@ -284,10 +367,12 @@ def optimize_worker(argstack):
 	return op_t, error_print
 
 
-def run_optimize(fname1, fname2, tf):
+def run_optimize(fname1, fname2, tf, pipeline = None):
 	print("Creating Alignment for: ", fname1, fname2)
+	if pipeline is not None:
+		print("[OCCA] Using OCCA for array operations")
 
-	ali = Alignment(Image.open(fname1), Image.open(fname2), tf, fname2)
+	ali = Alignment(Image.open(fname1), Image.open(fname2), tf, fname2, pipeline = pipeline)
 	print("[run_optimize] optimize...")
 	op_transform, error_print = ali.optimize()
 	print("[run_optimize] done")

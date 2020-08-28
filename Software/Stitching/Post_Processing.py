@@ -48,29 +48,14 @@ class Stack(object):
 
 
 		# This will get used while calculating an alpha mask for dust
-		error_arrays = np.ones([len(self.filenames)-1, ref_img.width, ref_img.height])
+		error_array_size = [len(self.filenames)-1, ref_img.width, ref_img.height]
 		
 
 		# We're done with the reference image
 		ref_img.close()
 
-		# Very helpful for getting through all the alignments quickly
-		p = multiprocessing.Pool();
 
-		tasks_list = []
-
-		for x, tf in zip(range(len(self.filenames)-1), self.transforms[1:]):
-			tasks_list.append([self.filenames[x], self.filenames[x+1], tf])
-
-
-		response_packets = p.map(snap.optimize_worker, tasks_list)
-
-		for x, (new_transform, emask_array) in enumerate(response_packets):
-
-			self.transforms[x+1] = new_transform
-			error_arrays[x] = emask_array
-
-		p.close()
+		error_arrays = transform_error_masks(error_array_size, pipeline='OCCA')
 
 
 		# Calculate an alpha_mask
@@ -118,6 +103,52 @@ class Stack(object):
 		error_arrays = np.minimum(error_arrays, 1)
 		print("EA Shape: ", error_arrays.shape)
 		self.alpha_mask = error_arrays
+
+	def transforms_error_masks(self, error_size, pipeline = 'multiprocessing', argpack = []):
+		if pipeline == 'multiprocessing':
+			return _TEM_multiprocessing(error_size, argpack);
+		else if pipeline == 'OCCA_array_ops':
+			return _TEM_OCCA_array_ops(error_size, argpack)
+
+
+
+	def _TEM_multiprocessing(self, error_size, argpack):
+		""" Use python's multiprocessing approach to speed up fitting. CPU-core parallelism """
+		p = multiprocessing.Pool();
+		error_arrays = np.ones(error_size)
+
+		tasks_list = []
+
+		for x, tf in zip(range(len(self.filenames)-1), self.transforms[1:]):
+			tasks_list.append([self.filenames[x], self.filenames[x+1], tf])
+
+		# Reminder: snap --> Auto_Snap.py
+		response_packets = p.map(snap.optimize_worker, tasks_list)
+
+		for x, (new_transform, emask_array) in enumerate(response_packets):
+
+			self.transforms[x+1] = new_transform
+			error_arrays[x] = emask_array
+
+		p.close()
+
+		return error_arrays
+
+	def _TEM_OCCA_array_ops(self, error_size, argpack):
+		""" Use the OCCA interface to run internal array modifications in the fitting process. GPU parallelism """
+		error_arrays = np.ones(error_size)
+
+		tasks_list = []
+
+		for x, tf in zip(range(len(self.filenames)-1), self.transforms[1:]):
+
+			new_transform, emask_array = snap.run_optimize(self.filenames[x], self.filenames[x+1], tf, pipeline = 'OCCA', argpack = argpack)
+
+			self.transforms[x+1] = new_transform
+			error_arrays[x] = emask_array
+
+
+		return error_arrays
 
 
 	def construct_global_alignments(self):
