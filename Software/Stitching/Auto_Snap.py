@@ -15,16 +15,16 @@ DepMan.install_and_import("numpy")
 DepMan.install_and_import("math")
 DepMan.install_and_import("random")
 DepMan.install_and_import("multiprocessing")
-DepMan.install_and_import("occa")
+# DepMan.install_and_import("occa")
 from PIL import Image, ImageMath
 import numpy as np
 import math
 import random
 import multiprocessing
 
-import occa
+# import occa
 
-min_scale = 4 # only go down to 2^5 pixels
+min_scale = 8 # only go down to 2^5 pixels
 max_scale = 10 # only go up to 2^12 pixels
 
 class Alignment(object):
@@ -133,20 +133,23 @@ class Alignment(object):
 			else:
 				self.wider_net = True
 		else:
-			scale_update = np.divide(np.divide(step, np.multiply(1/(2**self.scale), np.asarray(self.images[1].size))), window_size/2)
+			scale_update = np.divide(np.divide(step, np.multiply(1/(2**self.scale), np.asarray(self.images[1].size))), 4)
 			new_fractional_transform = [self.fractional_transform[0] + scale_update[0], self.fractional_transform[1] + scale_update[1]]
-			self.wider_net = False;
+			
 			if new_fractional_transform not in self.prior_transforms:
 				self.prior_transforms.append(new_fractional_transform)
 				# print("		Update Direction: ", step)
-				# print("		Scale Update: ", scale_update)
+				print(f"[{self.name}]		Scale Update: [%2.10f, %2.10f]"%(scale_update[0], scale_update[1]))
 				self.fractional_transform = [x for x in new_fractional_transform]
-				print(f"[{self.name}]		New Transform: [%2.3f, %2.3f]"%(self.fractional_transform[0], self.fractional_transform[1]))
-				print(f"[{self.name}]		Org Transform: [%2.3f, %2.3f]"%(self.original_transform[0], self.original_transform[1]))
+				print(f"[{self.name}]		Wider Net: {self.wider_net}")
+				print(f"[{self.name}]		New Transform: [%2.10f, %2.10f]"%(self.fractional_transform[0], self.fractional_transform[1]))
+				print(f"[{self.name}]		Org Transform: [%2.10f, %2.10f]"%(self.original_transform[0], self.original_transform[1]))
+				print(f"[{self.name}]		Ratio: {self.scale}")
 			else:
-				# print("		[Skip] Already evaluated transform")
+				print(f"[{self.name}]		Skipping [Already checked]")
 				self.scale -= 1 # No update, we've already been where we're going; scale down and continue
 				self.prior_transforms = [];
+			self.wider_net = False;
 
 
 		return True

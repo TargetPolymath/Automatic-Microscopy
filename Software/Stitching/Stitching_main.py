@@ -46,7 +46,7 @@ if __name__ == '__main__':
 	# print(len(sys.argv))
 	img_list.sort()
 	print("###############")
-	print(img_list)
+	print("\n".join(img_list))
 	print("Is this correct? ([ENTER]/[CANCEL])")
 	input()
 
@@ -82,7 +82,7 @@ if __name__ == '__main__':
 		# print("-------\n")
 
 
-	stack.output("Out_T.png")
+	stack.output("Seed_Pod/Out.png")
 
 
 

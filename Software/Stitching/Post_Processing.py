@@ -55,8 +55,7 @@ class Stack(object):
 		ref_img.close()
 
 
-		error_arrays = transform_error_masks(error_array_size, pipeline='OCCA')
-
+		self.transforms, error_arrays = self.transforms_error_masks(error_array_size, pipeline='multiprocessing')
 
 		# Calculate an alpha_mask
 
@@ -106,9 +105,9 @@ class Stack(object):
 
 	def transforms_error_masks(self, error_size, pipeline = 'multiprocessing', argpack = []):
 		if pipeline == 'multiprocessing':
-			return _TEM_multiprocessing(error_size, argpack);
-		else if pipeline == 'OCCA_array_ops':
-			return _TEM_OCCA_array_ops(error_size, argpack)
+			return self._TEM_multiprocessing(error_size, argpack);
+		elif pipeline == 'OCCA_array_ops':
+			return self._TEM_OCCA_array_ops(error_size, argpack)
 
 
 
@@ -119,6 +118,8 @@ class Stack(object):
 
 		tasks_list = []
 
+		temp_transforms = [[0, 0]] * len(self.transforms)
+
 		for x, tf in zip(range(len(self.filenames)-1), self.transforms[1:]):
 			tasks_list.append([self.filenames[x], self.filenames[x+1], tf])
 
@@ -127,28 +128,29 @@ class Stack(object):
 
 		for x, (new_transform, emask_array) in enumerate(response_packets):
 
-			self.transforms[x+1] = new_transform
+			temp_transforms[x+1] = new_transform
 			error_arrays[x] = emask_array
 
 		p.close()
 
-		return error_arrays
+		return temp_transforms, error_arrays
 
 	def _TEM_OCCA_array_ops(self, error_size, argpack):
 		""" Use the OCCA interface to run internal array modifications in the fitting process. GPU parallelism """
 		error_arrays = np.ones(error_size)
 
 		tasks_list = []
+		temp_transforms = [[0, 0]]*len(self.transforms)
 
 		for x, tf in zip(range(len(self.filenames)-1), self.transforms[1:]):
 
 			new_transform, emask_array = snap.run_optimize(self.filenames[x], self.filenames[x+1], tf, pipeline = 'OCCA', argpack = argpack)
 
-			self.transforms[x+1] = new_transform
+			temp_transforms[x+1] = new_transform
 			error_arrays[x] = emask_array
 
 
-		return error_arrays
+		return temp_transforms, error_arrays
 
 
 	def construct_global_alignments(self):
@@ -226,7 +228,7 @@ class Stack(object):
 		if self.output_dims is None:
 			self.construct_global_alignments()
 
-		dst = Image.new('RGBA', self.output_dims[0], (0, 100, 0, 0));
+		dst = Image.new('RGBA', self.output_dims[0], (255, 255, 255, 0));
 
 		print("Pasting")
 
@@ -257,7 +259,7 @@ class Stack(object):
 			img.close()
 		# In some blending cases, the resulting alpha channel is not fully opaque. This line sets the alpha channel to opaque.
 		# If a partially transparent output image is desired, remove this line
-		# dst.putalpha(255)
+		dst.putalpha(255)
 		try:
 			dst.save(target_filename)
 		except PermissionError:
