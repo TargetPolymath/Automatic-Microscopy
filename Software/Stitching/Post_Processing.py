@@ -55,7 +55,21 @@ class Stack(object):
 		ref_img.close()
 
 
-		self.transforms, error_arrays = self.transforms_error_masks(error_array_size, pipeline='multiprocessing')
+		# Serial_Info   = {"mode": "Serial"}
+		# OpenMP_Info   = {"mode": "OpenMP"  , "schedule": "compact", "chunk": 10}
+		# OpenCL_Info   = {"mode": "OpenCL"  , "platform_id": 0, "device_id": 0}
+		# OpenCL_I
+		# CUDA_Info     = {"mode": "CUDA"    , "device_id": 0}
+		# Pthreads_Info = {"mode": "Pthreads", "thread_count": 4, "schedule": "compact", "pinned_cores": [0, 0, 1, 1]}
+		# COI_Info      = {"mode": "COI"     , "device_id": 0}
+
+		CUDA_Info  = {"mode": "CUDA"  , "device_id": 0}
+		OpenCL_CPU = {"mode": "OpenCL", "platform_id": 0, "device_id": 0}
+		OpenCL_GPU = {"mode": "OpenCL", "platform_id": 1, "device_id": 0}
+
+
+
+		self.transforms, error_arrays = self.transforms_error_masks(error_array_size, pipeline='OCCA_array_ops', argpack=OpenCL_CPU)
 
 		# Calculate an alpha_mask
 

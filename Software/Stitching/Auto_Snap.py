@@ -15,14 +15,27 @@ DepMan.install_and_import("numpy")
 DepMan.install_and_import("math")
 DepMan.install_and_import("random")
 DepMan.install_and_import("multiprocessing")
-# DepMan.install_and_import("occa")
+
 from PIL import Image, ImageMath
 import numpy as np
 import math
 import random
 import multiprocessing
 
-# import occa
+allow_occa = True
+
+#########################################################
+BLOCK_SIZE = 64
+# THIS HAS TO MATCH WITH THE KERNEL
+# YOU WILL HAVE AN UNDETECTABLE BAD TIME IF IT DOESN'T
+#########################################################
+try:
+	DepMan.install_and_import("occa")
+	import occa
+except:
+	print("[OCCA] Not installed. Disabling.")
+	allow_occa = False
+
 
 min_scale = 8 # only go down to 2^5 pixels
 max_scale = 10 # only go up to 2^12 pixels
@@ -53,7 +66,7 @@ class Alignment(object):
 		self.prior_transforms = [];
 		self.img_scale_cache = [{}, {}];
 
-		if pipeline is None:
+		if pipeline is None or allow_occa is False:
 			self.pipeline = 'numpy'
 			self.device = None
 			self._error = self._error_numpy
@@ -61,6 +74,7 @@ class Alignment(object):
 			self.pipeline = 'OCCA'
 			self.device = occa.Device(argpack)
 			self._error = self._error_occa
+			self._error_kernel = self.device.build_kernel("map_error.okl", "map_error")
 
 
 	def _retrieve_img(self, image_id, scale = None):
@@ -234,11 +248,45 @@ class Alignment(object):
 
 	def _error_occa(self, ar1, ar2, title="Image"):
 		""" Using the OCCA pipeline, calculate the R^2 error between the two arrays """
+		""" IMPORTANT The notes in this file are not perfect representations of what happens in the kernel, but they're very close. """
+
+		pixels = np.uint(ar1.size / 4); # Pixel count
 
 		# For performance, I'll be flattening the arrays
-		o_dimensions = device.malloc(ar1.shape.astype(np.intc)) # we assume we won't get images with 65,535 pixels on a side
-		o_ar1 = device.malloc(ar1.astype(np.float32).ravel())
-		o_ar2 = device.malloc(ar2.astype(np.float32).ravel())
+		o_ar1 = self.device.malloc(ar1.astype(np.float32).ravel(), dtype=np.float32)
+		o_ar2 = self.device.malloc(ar2.astype(np.float32).ravel(), dtype=np.float32)
+		# This allocates space on the GPU for the appropriate span and datatypes
+
+		straight_e = np.zeros((pixels))
+		scaled_e_array = np.zeros((math.ceil(pixels / BLOCK_SIZE)))
+		# These are simple allocations, and will eventually receive the responses from the kernel
+
+		o_straight_e = self.device.malloc(straight_e, dtype = np.float32)
+		o_scaled_e = self.device.malloc(scaled_e_array, dtype = np.float32)
+		# These allocate the response space from the kernel
+
+
+		# Compile, but do not run, the kernel
+
+		o_straight_e.copy_from(straight_e)
+		o_scaled_e.copy_from(scaled_e_array)
+
+		self._error_kernel(pixels, o_ar1, o_ar2, o_straight_e, o_scaled_e);
+
+
+		o_straight_e.copy_to(straight_e)
+		o_scaled_e.copy_to(scaled_e_array)
+		straight_e = straight_e.reshape(ar1.shape[:-1])
+
+
+		scaled_e = (np.sum(scaled_e_array))/pixels
+
+		o_ar1.free()
+		o_ar2.free()
+		o_straight_e.free()
+		o_scaled_e.free()
+
+		return scaled_e, straight_e
 
 		# NEW MEMORY LAYOUT:
 		# o_ar* is in [width * [height * [px]]]
@@ -273,12 +321,7 @@ class Alignment(object):
 		# 	o_ar1[K+1] = o_ar1[K] * o_ar1[K+3]
 		# The G channel (soon to be averaged) equals the straight_e channel times the product-alpha channel
 
-		#######################################
-		# New Kernel
-
-
 		###########
-		# -- Requires prior kernel to complete
 		# Averaging the alpha_weighted values
 		#
 		# alive = o_dimensions[0] * o_dimensions[1]
@@ -297,6 +340,8 @@ class Alignment(object):
 		# Reshape o_ar1 back into (WxHxC)
 		# R channel is straight e
 		# G channel at pixel[0, 0] is error average
+
+
 
 
 
@@ -361,6 +406,8 @@ class Alignment(object):
 	def close(self):
 		for img in self.images:
 			img.close()
+		self.device.free()
+		del self.device
 
 
 def optimize_worker(argstack):
@@ -370,12 +417,12 @@ def optimize_worker(argstack):
 	return op_t, error_print
 
 
-def run_optimize(fname1, fname2, tf, pipeline = None):
+def run_optimize(fname1, fname2, tf, pipeline = None, argpack = None):
 	print("Creating Alignment for: ", fname1, fname2)
 	if pipeline is not None:
 		print("[OCCA] Using OCCA for array operations")
 
-	ali = Alignment(Image.open(fname1), Image.open(fname2), tf, fname2, pipeline = pipeline)
+	ali = Alignment(Image.open(fname1), Image.open(fname2), tf, fname2, pipeline = pipeline, argpack = argpack)
 	print("[run_optimize] optimize...")
 	op_transform, error_print = ali.optimize()
 	print("[run_optimize] done")

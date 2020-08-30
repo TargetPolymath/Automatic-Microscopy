@@ -1,0 +1,132 @@
+#define BLOCK_SIZE 64
+@kernel void map_error(	const unsigned long pixels,
+						const float *ar1,
+						const float *ar2,
+						float *straight_e,
+						float *scaled_e) {
+	// const int BLOCK_SIZE = BLOCK_SIZE;
+	// ar1 has length 4x longer than pixels, for the flattened RGBA values
+	for (int group = 0; group < pixels; group += BLOCK_SIZE; @outer) {
+
+		// Memory Management: Copy all relevant pixels into a shared array
+		@shared float local_ar1[BLOCK_SIZE*4];
+		@shared float local_ar2[BLOCK_SIZE*4];
+
+		// Inner Loop 0: Copy chunk into local memory
+		for (int local_ID = 0; local_ID < BLOCK_SIZE; local_ID++; @inner){
+			// For each pixel we'll manage in local memory...
+			if ((group + local_ID) < pixels) {
+				// If the global ID is a valid ID:
+
+
+				// Our group moves us in blocks of BLOCK_SIZE pixels; our id moves us within that block; 
+				// 	We need to get our global position in the space of the arrays (4 values per pixel)
+				int gcpos = (group + local_ID) * 4;
+				// Global Channel-valued Position
+				int lcpos = local_ID * 4;
+				// Local Channel-valued Position
+
+				// We've indexed to a single pixel, and we have the global reference for that pixel's head
+				// For each channel in that pixel, copy the channel into local memory
+				for (int sp_pos = 0; sp_pos < 4; sp_pos++){
+					// sp_pos --> sub_pixel position
+					local_ar1[lcpos + sp_pos] = ar1[gcpos + sp_pos];
+					local_ar2[lcpos + sp_pos] = ar2[gcpos + sp_pos];
+					// local_ar1[lcpos + sp_pos] = lcpos + sp_pos;
+					// local_ar2[lcpos + sp_pos] = lcpos + sp_pos;
+
+				}
+			}
+		}
+
+
+
+
+		// Inner Loop 1: Calculate R^2 and Weighted R^2
+		for (int local_ID = 0; local_ID < BLOCK_SIZE; local_ID++; @inner){
+			// ID maps to the R channel of an RGBA pixel in ar1
+			if ((group + local_ID) < pixels) {
+
+				int lcpos = local_ID * 4;
+				// local channel-valued position
+
+				// S1: Compute R^2 error between ar1 and ar2
+				for (int tlcpos = lcpos; tlcpos < (lcpos+3); tlcpos++) {
+					// temporary local channel-valued position
+					local_ar1[tlcpos] =  (local_ar1[tlcpos] - local_ar2[tlcpos]) * (local_ar1[tlcpos] - local_ar2[tlcpos]);
+				}
+
+				// S2: Compute the mean of the RGB values in ar1
+				local_ar1[lcpos] = (local_ar1[lcpos] + local_ar1[lcpos+1] + local_ar1[lcpos+2]) / 3.0;
+				// local_ar1[lcpos] = lcpos;
+				local_ar1[lcpos+1] = local_ar1[lcpos];
+				// Store the unweighted error in what used to be the Green channel
+
+				// local_ar1[lcpos+2] = 0;
+				// local_ar1[lcpos+3] = 0;
+
+				// S3: Compute the Alpha Product
+				local_ar1[lcpos+3] = (local_ar1[lcpos+3]*local_ar2[lcpos+3])/(255*255);
+				///local_ar1[lcpos+3] = 1;
+
+				// S4: Compute the weighted error
+				local_ar1[lcpos] = local_ar1[lcpos] * local_ar1[lcpos+3];
+				// For testing, keep a pre-sum list of values
+				// local_ar1[lcpos+2] = local_ar1[lcpos];
+			}
+		}
+
+		// Inner Loop 2: Perform Block Reduction on Weighted R^2
+		for (int alive = ((BLOCK_SIZE + 1) / 2); 0 < alive; alive /= 2) {
+			for (int local_ID = 0; local_ID < BLOCK_SIZE; local_ID++; @inner){
+				// ID maps to the R channel of an RGBA pixel in ar1
+				if ((group + local_ID) < pixels) {
+					if (local_ID < alive) {
+						if ((local_ID + alive) < BLOCK_SIZE){
+							local_ar1[local_ID*4] = (local_ar1[local_ID*4] + local_ar1[(local_ID+alive)*4]);
+							// local_ar1[local_ID*4] = alive;
+						}
+					}
+				}
+			}
+		}
+
+		// Inner Loop 3: Copy local_ar1 back into global ar1
+		for (int local_ID = 0; local_ID < BLOCK_SIZE; local_ID++; @inner){
+			// For each pixel we'll manage in local memory...
+			if ((group + local_ID) < pixels) {
+				// If the global ID is a valid ID:
+
+
+				// Our group moves us in blocks of BLOCK_SIZE pixels; our id moves us within that block; 
+				// 	We need to get our global position in the space of the arrays (4 values per pixel)
+				
+				// int gcpos = (group + local_ID) * 4;
+				// Global Channel-valued Position
+
+				int lcpos = local_ID * 4;
+				// Local  Channel-valued Position
+
+				int gppos = group + local_ID;
+				// Global Pixel-valued Position
+
+				// We've indexed to a single pixel, and we have the global reference for that pixel's head
+				// For each channel in that pixel, copy the channel into local memory
+				straight_e[gppos+1] = local_ar1[lcpos+1];
+
+				if (local_ID == 0){
+					scaled_e[(int) (group/BLOCK_SIZE)] = local_ar1[lcpos];
+					// scaled_e[0] = 1;
+				}
+
+
+				// for (int sp_pos = 0; sp_pos < 2; sp_pos++){
+				// 	// sp_pos --> sub_pixel position
+				// 	ar1[gcpos + sp_pos] = local_ar1[lcpos + sp_pos];
+				// 	// ar2[gcpos + sp_pos] = local_ar2[lcpos + sp_pos];
+
+				// }
+			}
+		}
+	}
+}
