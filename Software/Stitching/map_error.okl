@@ -1,41 +1,102 @@
-#define BLOCK_SIZE 64
-@kernel void map_error(	const unsigned long pixels,
-						const float *ar1,
-						const float *ar2,
+// #define BLOCK_SIZE 64
+// #define TRANSFORM_X 
+// #define TRANSFORM_Y
+// #define INPUT_W
+// #define OVERLAP_W
+
+
+// pixels is the position in the output array, post-overlap_slicing
+// ar1 and ar2 are in the space of the (input scaled raveled) copy of the image
+
+// scaled_e and straight_e are in the output space (again, post-overlap_slicing)
+@kernel void map_error(	const unsigned long input_pixels,
+						const unsigned long output_pixels,
+						// const float *ar1,
+						// const float *ar2,
+						float *ar1,
+						float *ar2,
 						float *straight_e,
-						float *scaled_e) {
+						float *scaled_e,
+						const int transform_y,
+						const int transform_x,
+						const unsigned long input_w,
+						const unsigned long overlap_w) {
 	// const int BLOCK_SIZE = BLOCK_SIZE;
 	// ar1 has length 4x longer than pixels, for the flattened RGBA values
-	for (int group = 0; group < pixels; group += BLOCK_SIZE; @outer) {
+	for (int group = 0; group < output_pixels; group += BLOCK_SIZE; @outer) {
 
 		// Memory Management: Copy all relevant pixels into a shared array
 		@shared float local_ar1[BLOCK_SIZE*4];
 		@shared float local_ar2[BLOCK_SIZE*4];
 
-		// Inner Loop 0: Copy chunk into local memory
+
+		// Inner Loop 0: Copy chunk from original images into local memory in output space
+		// This contains the overlap slicing according to #define's provided by python just before compiling
 		for (int local_ID = 0; local_ID < BLOCK_SIZE; local_ID++; @inner){
 			// For each pixel we'll manage in local memory...
-			if ((group + local_ID) < pixels) {
+			if ((group + local_ID) < output_pixels) {
 				// If the global ID is a valid ID:
 
 
 				// Our group moves us in blocks of BLOCK_SIZE pixels; our id moves us within that block; 
 				// 	We need to get our global position in the space of the arrays (4 values per pixel)
-				int gcpos = (group + local_ID) * 4;
-				// Global Channel-valued Position
+				
+				// int gcpos = (group + local_ID) * 4;
+
+				// group ranges over output pixels
+
+				//////////////////////////////////////////
+				// We need to transform from our output-space index into our input-space index for both inputs
+				//	We need to add to our output-space index:
+				// 		The count of all pixels above the overlap
+				//		The count of skipped pixels to the left or right of the overlap
+				//////////////////////////////////////////
+
+				int oppos = (group + local_ID);
+				// Output Pixel-valued position - the position in the overlapping region
+
+				//////////////////////////////
+				int above_skipped_1 = max(0, (transform_y))*input_w;
+				// The count of pixels skipped before the overlap region for input 1
+
+				int tx_positive = 0;
+				if ((transform_x) > 0){
+					tx_positive = 1;
+				}
+
+				int side_skipped_1 = abs(transform_x) * floor((float)(oppos/overlap_w + tx_positive));
+				// The count of pixels skipped to the left of the overlap region for input 1
+				//////////////////////////////
+				int above_skipped_2 = max(0, (-1*(transform_y)))*input_w;
+				int side_skipped_2 = abs(transform_x) * floor((float)(oppos/overlap_w - (tx_positive-1)));
+				//////////////////////////////
+
+
+				int icpos_1 = (group + local_ID + above_skipped_1 + side_skipped_1) * 4;
+				// Input-space Channel-valued Position for Array 1
+
+				int icpos_2 = (group + local_ID + above_skipped_2 + side_skipped_2) * 4;
+				// Input-space Channel-valued Position for Array 2
+
+
+
 				int lcpos = local_ID * 4;
 				// Local Channel-valued Position
 
 				// We've indexed to a single pixel, and we have the global reference for that pixel's head
 				// For each channel in that pixel, copy the channel into local memory
-				for (int sp_pos = 0; sp_pos < 4; sp_pos++){
-					// sp_pos --> sub_pixel position
-					local_ar1[lcpos + sp_pos] = ar1[gcpos + sp_pos];
-					local_ar2[lcpos + sp_pos] = ar2[gcpos + sp_pos];
-					// local_ar1[lcpos + sp_pos] = lcpos + sp_pos;
-					// local_ar2[lcpos + sp_pos] = lcpos + sp_pos;
+				local_ar1[lcpos] = ar1[icpos_1];
+				local_ar2[lcpos] = ar2[icpos_2];
 
-				}
+				local_ar1[lcpos + 1] = ar1[icpos_1 + 1];
+				local_ar2[lcpos + 1] = ar2[icpos_2 + 1];
+
+				local_ar1[lcpos + 2] = ar1[icpos_1 + 2];
+				local_ar2[lcpos + 2] = ar2[icpos_2 + 2];
+
+				local_ar1[lcpos + 3] = ar1[icpos_1 + 3];
+				local_ar2[lcpos + 3] = ar2[icpos_2 + 3];
+
 			}
 		}
 
@@ -45,7 +106,7 @@
 		// Inner Loop 1: Calculate R^2 and Weighted R^2
 		for (int local_ID = 0; local_ID < BLOCK_SIZE; local_ID++; @inner){
 			// ID maps to the R channel of an RGBA pixel in ar1
-			if ((group + local_ID) < pixels) {
+			if ((group + local_ID) < output_pixels) {
 
 				int lcpos = local_ID * 4;
 				// local channel-valued position
@@ -56,7 +117,7 @@
 					local_ar1[tlcpos] =  (local_ar1[tlcpos] - local_ar2[tlcpos]) * (local_ar1[tlcpos] - local_ar2[tlcpos]);
 				}
 
-				// S2: Compute the mean of the RGB values in ar1
+				// S2: Compute the mean of the RGB error values in ar1
 				local_ar1[lcpos] = (local_ar1[lcpos] + local_ar1[lcpos+1] + local_ar1[lcpos+2]) / 3.0;
 				// local_ar1[lcpos] = lcpos;
 				local_ar1[lcpos+1] = local_ar1[lcpos];
@@ -80,21 +141,22 @@
 		for (int alive = ((BLOCK_SIZE + 1) / 2); 0 < alive; alive /= 2) {
 			for (int local_ID = 0; local_ID < BLOCK_SIZE; local_ID++; @inner){
 				// ID maps to the R channel of an RGBA pixel in ar1
-				if ((group + local_ID) < pixels) {
-					if (local_ID < alive) {
-						if ((local_ID + alive) < BLOCK_SIZE){
-							local_ar1[local_ID*4] = (local_ar1[local_ID*4] + local_ar1[(local_ID+alive)*4]);
-							// local_ar1[local_ID*4] = alive;
-						}
-					}
+				if ((group + local_ID) < output_pixels && ((local_ID < alive) && ((local_ID + alive) < BLOCK_SIZE))) {
+					local_ar1[local_ID*4] = (local_ar1[local_ID*4] + local_ar1[(local_ID+alive)*4]);
+					// local_ar1[local_ID*4] = alive;	
 				}
 			}
 		}
 
+
+
+
 		// Inner Loop 3: Copy local_ar1 back into global ar1
+		// We intentionally under-fill the array, allowing for a persistant kernel
+		//
 		for (int local_ID = 0; local_ID < BLOCK_SIZE; local_ID++; @inner){
 			// For each pixel we'll manage in local memory...
-			if ((group + local_ID) < pixels) {
+			if ((group + local_ID) < output_pixels) {
 				// If the global ID is a valid ID:
 
 
@@ -111,21 +173,13 @@
 				// Global Pixel-valued Position
 
 				// We've indexed to a single pixel, and we have the global reference for that pixel's head
-				// For each channel in that pixel, copy the channel into local memory
-				straight_e[gppos+1] = local_ar1[lcpos+1];
+				// For each channel in that pixel, copy the channel into global memory
+				straight_e[gppos] = local_ar1[lcpos+1]; // The straight error for each pixel is stored in elements 4n+1; copy it to position group+n in a global array
 
 				if (local_ID == 0){
 					scaled_e[(int) (group/BLOCK_SIZE)] = local_ar1[lcpos];
 					// scaled_e[0] = 1;
 				}
-
-
-				// for (int sp_pos = 0; sp_pos < 2; sp_pos++){
-				// 	// sp_pos --> sub_pixel position
-				// 	ar1[gcpos + sp_pos] = local_ar1[lcpos + sp_pos];
-				// 	// ar2[gcpos + sp_pos] = local_ar2[lcpos + sp_pos];
-
-				// }
 			}
 		}
 	}

@@ -17,6 +17,8 @@ import GUIMan as GUI
 import Post_Processing as Post
 import glob
 import sys
+import Auto_Snap as snap # For cache filling
+from multiprocessing import Process # for cache filling
 
 # Grab filenames
 
@@ -39,7 +41,7 @@ if __name__ == '__main__':
 	print("If all of your images have roughly the same relative transformation (relative to it's previous), you can click-and-drag that transform once, then hit [TAB] for the rest of the images to auto-complete.")
 	print("The output is currently called 'Out_T.png' because I haven't built a way for you to change it.")
 	print("Hit [Enter], confirm that the filenames were collected correctly, and get aligned!")
-	input()
+	# input()
 
 	img_list = sys.argv[1:]
 	# print(img_list)
@@ -48,27 +50,31 @@ if __name__ == '__main__':
 	print("###############")
 	print("\n".join(img_list))
 	print("Is this correct? ([ENTER]/[CANCEL])")
-	input()
+	# input()
 
 	# img_list = ["Test_A.png", "Test_B.png", "Test_C.png", "Test_D.png"]
 
 	# Prepare image stacking
+	async_fill_img_cache = Process(target=snap.preload_gfIc, args=([img_list]))
+	async_fill_img_cache.start()
+
+
 
 	stack = Post.Stack()
 
 	stack.register_root(img_list[0])
 
-	skip_GUI = False
-	fractional_offset = [0, 0]
+	skip_GUI = True # For repeatable testing
+	fractional_offset = [0, 0] # [Y, X] for compliance
 
 	###########
 	# Start a Window
 
 	for filename in img_list[1:]:
-		print("\n\n")
+
 
 		if not skip_GUI:
-
+			print("\n\n")
 			live_window = GUI.GUI_Window(start_offset_ratio = stack.transforms[-1]);
 
 			live_window.load_AB_img(stack.filenames[-1], filename)
@@ -78,10 +84,13 @@ if __name__ == '__main__':
 			fractional_offset, skip_GUI = live_window.collect_transform()
 			# print("Gathered Fractional Offset - ", fractional_offset)
 
+		# This doesn't open the images
 		stack.register(filename, fractional_offset)
 		# print("-------\n")
 
-
+	async_fill_img_cache.join()
+	# The image caching can take up to this long; at this point, we need it to be done
+	# 	before we can continue
 	stack.output("Seed_Pod/Out.png")
 
 

@@ -21,13 +21,13 @@ DOWNSIZE_RATIO = 0.2
 
 
 class GUI_Window(object):
-	"""A single instance of an editing window"""
-	def __init__(self, width = 3000*DOWNSIZE_RATIO, height = 3000*DOWNSIZE_RATIO, start_offset_ratio = [0, 0], downsize_ratio = DOWNSIZE_RATIO):
+	"""A single instance of an editing window"""													#  [Y, X]
+	def __init__(self, height = 3000*DOWNSIZE_RATIO, width = 3000*DOWNSIZE_RATIO, start_offset_ratio = [0, 0], downsize_ratio = DOWNSIZE_RATIO):
 		super(GUI_Window, self).__init__()
 		self.width = width
 		self.height = height
 		self.root = Tk()
-		self.canvas = Canvas(self.root, width = self.width, height = self.height)
+		self.canvas = Canvas(self.root, height = self.height, width = self.width)
 		# self.canvas.pack(expand=1, fill=BOTH);
 		self.canvas.pack()
 
@@ -38,12 +38,12 @@ class GUI_Window(object):
 		self.downsize_ratio = downsize_ratio
 
 		self.start_offset_ratio = start_offset_ratio;
-		self.offset_vector = [0, 0];
+		self.offset_vector = [0, 0]; # [Y, X] for compliance
 		# print("Starting Offset Vector: ", self.offset_vector)
 		self.rotation = 0;
 
-		self.mouse_clickdown_pos = [0, 0]
-		self.last_mouse_pos = [0, 0]
+		self.mouse_clickdown_pos = [0, 0] # [Y, X] for compliance
+		self.last_mouse_pos = [0, 0] # [Y, X] for compliance
 		self.mouse_down = False
 
 		self.root.bind('<B1-Motion>', self.B1_movement)
@@ -77,60 +77,64 @@ class GUI_Window(object):
 		self.img_array[0] = load_and_resize(A_filepath, self.downsize_ratio); # [Tkinter image, PIL image]
 		self.img_array[1] = load_and_resize(B_filepath, self.downsize_ratio, alpha = 150);
 
-		self.offset_vector[0] = self.start_offset_ratio[0]*self.img_array[1][1].width
-		self.offset_vector[1] = self.start_offset_ratio[1]*self.img_array[1][1].height
+		self.offset_vector[0] = self.start_offset_ratio[0]*self.img_array[1][1].height
+		self.offset_vector[1] = self.start_offset_ratio[1]*self.img_array[1][1].width
 		# print("New Offset Vector: ", self.offset_vector)
 
+		# 									 [X, Y] apparently
 		self.A_img = self.canvas.create_image(0, 0, image=self.img_array[0][0], anchor = "nw");
-		self.B_img = self.canvas.create_image(self.offset_vector[0], self.offset_vector[1], image=self.img_array[1][0], anchor = "nw");
+		self.B_img = self.canvas.create_image(self.offset_vector[1], self.offset_vector[0], image=self.img_array[1][0], anchor = "nw");
 
 
 
 	def B1_movement(self, event):
-		off_x = event.x - self.last_mouse_pos[0]
-		off_y = event.y - self.last_mouse_pos[1]
+		off_y = event.y - self.last_mouse_pos[0]
+		off_x = event.x - self.last_mouse_pos[1]
 
-		self.last_mouse_pos = [event.x, event.y]
+
+		self.last_mouse_pos = [event.y, event.x]
 		self.canvas.move(self.B_img, off_x, off_y)
+		# tkinter is [X, Y]
 
 		# Does not call update_B_pos because the mouse status is persistant; offset_vector is updated in clickup
 		# print(self.B_img)
 
-	def update_B_pos(self, off_x, off_y):
-		self.offset_vector[0] += off_x
-		self.offset_vector[1] += off_y
+	def update_B_pos(self, off_y, off_x):
+		self.offset_vector[0] += off_y
+		self.offset_vector[1] += off_x
 
+		# tkinter is [x, y]
 		self.canvas.move(self.B_img, off_x, off_y)
 		# print(str(self.offset_vector[0] + off_x) + ", " + str(self.offset_vector[1] + off_y))
 
 	def clickdown(self, event):
-		self.mouse_clickdown_pos = [event.x, event.y]
-		self.last_mouse_pos = [event.x, event.y]
+		self.mouse_clickdown_pos = [event.y, event.x]
+		self.last_mouse_pos = [event.y, event.x]
 		self.mouse_down = True
 
 	def clickup(self, event):
 		self.mouse_down = False
-		off_x = event.x - self.mouse_clickdown_pos[0]
-		off_y = event.y - self.mouse_clickdown_pos[1]
-		self.offset_vector[0] += off_x
-		self.offset_vector[1] += off_y
+		off_y = event.y - self.mouse_clickdown_pos[0]
+		off_x = event.x - self.mouse_clickdown_pos[1]
+		self.offset_vector[0] += off_y
+		self.offset_vector[1] += off_x
 		# self.update_B_pos(off_x, off_y);
 
 
 	def down_arrow(self, event):
-		self.update_B_pos(0, 1);
+		self.update_B_pos(1, 0);
 	def up_arrow(self, event):
-		self.update_B_pos(0, -1);
+		self.update_B_pos(-1, 0);
 
 	def right_arrow(self, event):
-		self.update_B_pos(1, 0);
+		self.update_B_pos(0, 1);
 	def left_arrow(self, event):
-		self.update_B_pos(-1, 0);
+		self.update_B_pos(0, -1);
 
 
 	def collect_transform(self):
 		# print("Collecting Transform...")
-		output = [self.offset_vector[0] / self.img_array[1][0].width(), self.offset_vector[1] / self.img_array[1][0].height()]
+		output = [self.offset_vector[0] / self.img_array[1][0].height(), self.offset_vector[1] / self.img_array[1][0].width()]
 		# print(output)
 		return output, self.initiate_skip_GUI
 
@@ -142,8 +146,9 @@ def load_and_resize(filepath, downsize_ratio = DOWNSIZE_RATIO, alpha = 255):
 
 	in_width, in_height = temp.size
 
-	resize_target = (round(in_width * downsize_ratio), round(in_height * downsize_ratio))
-	temp = temp.resize(resize_target)
+	# [Y, X] for compliance
+	resize_target = [round(in_height * downsize_ratio), round(in_width * downsize_ratio)]
+	temp = temp.resize(resize_target[::-1]) # Pillow resize takes [X, Y]
 
 	img2 = ImageTk.PhotoImage(temp)
 	# Need some kind of reactive overlay mechanic for easier alignment

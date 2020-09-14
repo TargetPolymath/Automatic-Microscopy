@@ -14,7 +14,7 @@ import DepMan
 DepMan.install_and_import("numpy")
 DepMan.install_and_import("PIL", pip_name = "Pillow")
 DepMan.install_and_import("multiprocessing")
-from PIL import Image
+from PIL import Image, ImageFilter
 import numpy as np
 import multiprocessing
 
@@ -25,7 +25,7 @@ class Stack(object):
 	def __init__(self):
 		super(Stack, self).__init__()
 		self.filenames = [];
-		self.transforms = []
+		self.transforms = [] # [Y, X] for compliance
 		self.alpha_mask = None;
 		self.output_dims = None;
 		self.global_transforms = None;
@@ -37,7 +37,7 @@ class Stack(object):
 	def register(self, filename, transform):
 		# print("Registering transform ", transform)
 		self.filenames.append(filename)
-		self.transforms.append(transform)
+		self.transforms.append(transform) # [Y, X] for compliance
 		# print("Transforms: ", self.transforms)
 
 	def align(self):
@@ -48,7 +48,7 @@ class Stack(object):
 
 
 		# This will get used while calculating an alpha mask for dust
-		error_array_size = [len(self.filenames)-1, ref_img.width, ref_img.height]
+		error_array_size = [len(self.filenames)-1, ref_img.height, ref_img.width]
 		
 
 		# We're done with the reference image
@@ -63,13 +63,13 @@ class Stack(object):
 		# Pthreads_Info = {"mode": "Pthreads", "thread_count": 4, "schedule": "compact", "pinned_cores": [0, 0, 1, 1]}
 		# COI_Info      = {"mode": "COI"     , "device_id": 0}
 
-		CUDA_Info  = {"mode": "CUDA"  , "device_id": 0}
+		CUDA_GPU  = {"mode": "CUDA"  , "device_id": 0}
 		OpenCL_CPU = {"mode": "OpenCL", "platform_id": 0, "device_id": 0}
 		OpenCL_GPU = {"mode": "OpenCL", "platform_id": 1, "device_id": 0}
 
 
 
-		self.transforms, error_arrays = self.transforms_error_masks(error_array_size, pipeline='OCCA_array_ops', argpack=OpenCL_CPU)
+		self.transforms, error_arrays = self.transforms_error_masks(error_array_size, pipeline='OCCA_array_ops', argpack=CUDA_GPU)
 
 		# Calculate an alpha_mask
 
@@ -90,7 +90,7 @@ class Stack(object):
 		error_arrays = np.subtract(error_arrays, np.min(error_arrays))
 		error_arrays = np.subtract(error_arrays, 20)
 		error_arrays = np.divide(error_arrays, np.max(error_arrays))
-		error_arrays = np.add(np.multiply(error_arrays, -2), 1) # Intentionally max out some of the alpha range
+		error_arrays = np.add(np.multiply(error_arrays, -2), 0.5) # Intentionally max out some of the alpha range, but leave everywhere a little transparent
 
 		# print("EA Min: ", np.min(error_arrays))
 		# print("EA Max: ", np.max(error_arrays))
@@ -169,8 +169,8 @@ class Stack(object):
 
 	def construct_global_alignments(self):
 
-		self.global_transforms = [[0, 0]]
-		running_bbox = [[0, 0], [0, 0]]
+		self.global_transforms = [[0, 0]] # [[Y, X]] for compliance
+		running_bbox = [[0, 0], [0, 0]] # [[Y, X], [Y, X]]
 
 
 		for fname, transform in zip(self.filenames, self.transforms):
@@ -195,44 +195,48 @@ class Stack(object):
 			# print("	Optimized Ratio Transform: ", transform)
 
 
-			relative_x = transform[0]*new_width
-			relative_y = transform[1]*new_height
+			relative_y = transform[0]*new_height
+			relative_x = transform[1]*new_width
 			# print("	Optimized Relative Transform: ", [relative_x, relative_y])
 			
 
 			# alignment.close() # We could keep alignment alive, but I'd rather free memory
 
 			# 	# Convert from sequential relative transforms to global transform (assuming the first image has a transform (0, 0))
-			global_transform_x = self.global_transforms[-1][0] + relative_x
-			global_transform_y = self.global_transforms[-1][1] + relative_y
+
+			global_transform_y = self.global_transforms[-1][0] + relative_y
+			global_transform_x = self.global_transforms[-1][1] + relative_x
 
 			# 	# Add our new global transforms to our running list of global transforms
-			self.global_transforms.append([global_transform_x, global_transform_y])
+			self.global_transforms.append([global_transform_y, global_transform_x])
 
 			# 	# For compatability, we assume the 'global' transform applies to the top left corner of the image
 			# 	# So, we need to calculate the extent of our total 'canvas', which requires knowing where the bottom right corner of the image lands
-			br_x = global_transform_x + new_width
 			br_y = global_transform_y + new_height
+			br_x = global_transform_x + new_width
 
 
 			# 	# Update the extent of our canvas (bbox -> bounding box)
-			running_bbox[0][0] = min(running_bbox[0][0], global_transform_x)
-			running_bbox[0][1] = min(running_bbox[0][1], global_transform_y)
-			running_bbox[1][0] = max(running_bbox[1][0], br_x)
-			running_bbox[1][1] = max(running_bbox[1][1], br_y)
+			running_bbox[0][0] = min(running_bbox[0][0], global_transform_y)
+			running_bbox[0][1] = min(running_bbox[0][1], global_transform_x)
+			running_bbox[1][0] = max(running_bbox[1][0], br_y)
+			running_bbox[1][1] = max(running_bbox[1][1], br_x)
 
 		print("Done Loading")
 
 		# Our canvas needs to end up with only positive coordinates; so, we calculate how far we 'overran' into negative coordinates
-		left_overrun = -1*min(0, running_bbox[0][0])
-		top_overrun = -1*min(0, running_bbox[0][1])
+		top_overrun = -1*min(0, running_bbox[0][0])
+		left_overrun = -1*min(0, running_bbox[0][1])
 
 		# We use these overrun values to compute the total size of the canvas
-		final_width = int(round(running_bbox[1][0] + left_overrun))
-		final_height = int(round(running_bbox[1][1] + top_overrun))
-		print("Final Width:  ", final_width)
+		final_height = int(round(running_bbox[1][0] + top_overrun))
+		final_width = int(round(running_bbox[1][1] + left_overrun))
+
 		print("Final Height: ", final_height)
-		self.output_dims = [(final_width, final_height), (left_overrun, top_overrun)]
+		print("Final Width:  ", final_width)
+		print("Top Overrun:  ", top_overrun)
+		print("Left Overrun: ", left_overrun)
+		self.output_dims = [(final_height, final_width), (top_overrun, left_overrun)]
 
 	def output(self, target_filename, return_when_done = False):
 		# Creating a blank canvas which is white and has opacity 0
@@ -242,13 +246,20 @@ class Stack(object):
 		if self.output_dims is None:
 			self.construct_global_alignments()
 
-		dst = Image.new('RGBA', self.output_dims[0], (255, 255, 255, 0));
+		####################################
+		# FOR PROFILING ONLY
+		exit()
+		#
+		####################################
+
+		#									 [Y, X][::-1]
+		dst = Image.new('RGBA', self.output_dims[0][::-1], (255, 255, 255, 0));
 
 		print("Pasting")
 
 
 
-		alpha_img = Image.fromarray(np.multiply(self.alpha_mask, 255).astype(np.uint8).transpose()).convert('L')
+		alpha_img = Image.fromarray(np.multiply(self.alpha_mask, 255).astype(np.uint8)).convert('L').filter(ImageFilter.GaussianBlur(2))
 		# alpha_img.show()
 
 		# print("Len Images: ", len(images))
@@ -269,7 +280,9 @@ class Stack(object):
 			# print((int(round(g_transform[0] + left_overrun)), int(round(g_transform[1] + top_overrun))))
 			# For the particular global transform of this image, plus our global offset to guarantee positive coordinates, place the image onto our canvas
 
-			dst.alpha_composite(img, (int(round(g_transform[0] + self.output_dims[1][0])), int(round(g_transform[1] + self.output_dims[1][1]))))
+			# Alpha Composite is in [X, Y]
+			print((int(round(g_transform[1] + self.output_dims[1][1])), int(round(g_transform[0] + self.output_dims[1][0]))))
+			dst.alpha_composite(img, (int(round(g_transform[1] + self.output_dims[1][1])), int(round(g_transform[0] + self.output_dims[1][0]))))
 			img.close()
 		# In some blending cases, the resulting alpha channel is not fully opaque. This line sets the alpha channel to opaque.
 		# If a partially transparent output image is desired, remove this line
